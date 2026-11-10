@@ -75,12 +75,20 @@ struct DesktopPlanCard: View {
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                 Spacer(minLength: 2)
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let time = DeadlineCountdown(dueAt: next.dueAt, now: context.date)
-                    Text(time.label)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(time.isOverdue ? Color(red: 1, green: 0.80, blue: 0.67) : ice)
-                        .monospacedDigit()
+                if next.showsCountdown {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        let time = DeadlineCountdown(dueAt: next.dueAt, now: context.date)
+                        Text(time.label)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(time.isOverdue ? Color(red: 1, green: 0.80, blue: 0.67) : ice)
+                            .monospacedDigit()
+                            .fixedSize()
+                    }
+                } else {
+                    Text(next.dateLabel)
+                        .font(.system(size: 11))
+                        .foregroundStyle(quiet)
+                        .lineLimit(1)
                         .fixedSize()
                 }
             } else {

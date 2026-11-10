@@ -18,6 +18,9 @@ struct WidgetDaySummary: Codable, Equatable {
 struct WidgetDeadlineSummary: Codable, Equatable {
     let title: String
     let dueAt: Date
+    let countdownEnabled: Bool?
+
+    var showsCountdown: Bool { countdownEnabled ?? true }
 }
 
 struct WidgetSummary: Codable, Equatable {
