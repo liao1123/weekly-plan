@@ -43,6 +43,7 @@ struct DeadlineCountdown {
 struct Plan: Codable, Equatable {
     private var goals: [String: [PlanTask]] = [:]
     private var days: [String: [PlanTask]] = [:]
+    // Keep notes from older versions when saving the plan.
     private var notes: [String: String]?
     private var deadlines: [PlanDeadline]?
 
@@ -70,24 +71,12 @@ struct Plan: Codable, Equatable {
         }
     }
 
-    subscript(noteFor day: String) -> String {
-        get { notes?[day] ?? "" }
-        set {
-            var updated = notes ?? [:]
-            updated[day] = newValue.isEmpty ? nil : newValue
-            notes = updated.isEmpty ? nil : updated
-        }
-    }
-
     func widgetSummary(at date: Date, calendar: PlanCalendar = PlanCalendar()) -> WidgetSummary {
         let today = calendar.dayKey(date)
         let thisWeek = calendar.dayKey(calendar.weekStart(for: date))
         let upcomingGoals = goals.filter { $0.key >= thisWeek }.mapValues { widgetTasks($0, limit: 2) }
-        var upcomingDays = days.filter { $0.key >= today }.mapValues {
+        let upcomingDays = days.filter { $0.key >= today }.mapValues {
             WidgetDaySummary(tasks: widgetTasks($0, limit: 4))
-        }
-        for (day, note) in notes ?? [:] where day >= today {
-            upcomingDays[day, default: WidgetDaySummary()].note = String(note.prefix(160))
         }
         let deadline = firstOpenDeadline.map {
             WidgetDeadlineSummary(title: String($0.title.prefix(100)), dueAt: $0.dueAt)
@@ -211,10 +200,6 @@ final class PlanStore: ObservableObject {
         update(slot) { tasks in
             tasks.removeAll(where: { $0.id == id })
         }
-    }
-
-    func saveNote(_ text: String, for day: String) -> Bool {
-        save { $0[noteFor: day] = text.trimmingCharacters(in: .whitespacesAndNewlines) }
     }
 
     func saveDeadline(_ text: String, dueAt: Date, editing id: UUID?) -> Bool {

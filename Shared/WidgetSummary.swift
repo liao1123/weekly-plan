@@ -13,7 +13,6 @@ struct WidgetTaskList: Codable, Equatable {
 
 struct WidgetDaySummary: Codable, Equatable {
     var tasks = WidgetTaskList()
-    var note: String?
 }
 
 struct WidgetDeadlineSummary: Codable, Equatable {

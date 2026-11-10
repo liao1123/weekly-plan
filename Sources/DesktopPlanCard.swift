@@ -34,11 +34,10 @@ struct DesktopPlanCard: View {
         let week = calendar.dayKey(calendar.weekStart(for: date))
         let goals = store.plan[.goal(week)]
         let today = store.plan[.day(day)]
-        let note = store.plan[noteFor: day]
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Label("周计划", systemImage: "calendar")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .overlay {
                         CardDragHandle()
                             .accessibilityHidden(true)
@@ -63,12 +62,6 @@ struct DesktopPlanCard: View {
             deadline
             taskSection("本周目标", items: goals, limit: 1)
             taskSection("今日待办", items: today, limit: 3)
-            if !note.isEmpty {
-                Label(note, systemImage: "note.text")
-                    .font(.system(size: 11))
-                    .foregroundStyle(quiet)
-                    .lineLimit(1)
-            }
         }
     }
 
@@ -79,7 +72,7 @@ struct DesktopPlanCard: View {
                 .foregroundStyle(ice)
             if let next = store.plan.firstOpenDeadline {
                 Text(next.title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                 Spacer(minLength: 2)
                 TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -92,7 +85,7 @@ struct DesktopPlanCard: View {
                 }
             } else {
                 Text("暂无未完成的截止事项")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(quiet)
                 Spacer()
             }
@@ -106,19 +99,19 @@ struct DesktopPlanCard: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(ice)
                 Spacer()
                 if !items.isEmpty {
                     Text("\(items.filter(\.isDone).count)/\(items.count)")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .monospacedDigit()
                         .foregroundStyle(quiet)
                 }
             }
             if items.isEmpty {
                 Text("暂无安排")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(quiet)
             } else {
                 ForEach(items.prefix(limit)) { task in
@@ -128,9 +121,9 @@ struct DesktopPlanCard: View {
                             .lineLimit(1)
                     } icon: {
                         Image(systemName: task.isDone ? "checkmark.square.fill" : "square")
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                     }
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(task.isDone ? quiet : .white)
                 }
             }

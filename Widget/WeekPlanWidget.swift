@@ -9,7 +9,7 @@ struct WeekPlanWidget: Widget {
             WeekPlanWidgetView(entry: entry)
         }
         .configurationDisplayName("周计划")
-        .description("在桌面查看 DDL、本周目标、今日待办和备注。")
+        .description("在桌面查看 DDL、本周目标和今日待办。")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
 }
@@ -35,7 +35,7 @@ private struct WeekPlanProvider: TimelineProvider {
         let sample = WidgetSummary(
             goals: [week: WidgetTaskList(items: [goal], count: 1)],
             days: [calendar.dayKey(now): WidgetDaySummary(
-                tasks: WidgetTaskList(items: [task], count: 1), note: "待跟进"
+                tasks: WidgetTaskList(items: [task], count: 1)
             )],
             deadline: WidgetDeadlineSummary(title: "交稿", dueAt: now.addingTimeInterval(28_800))
         )
@@ -100,7 +100,7 @@ private struct WeekPlanWidgetView: View {
     private var medium: Bool { family == .systemMedium }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: medium ? 7 : 11) {
+        VStack(alignment: .leading, spacing: medium ? 6 : 11) {
             HStack {
                 Label("周计划", systemImage: "calendar")
                     .font(.system(size: medium ? 14 : 17, weight: .semibold))
@@ -117,13 +117,6 @@ private struct WeekPlanWidgetView: View {
             }
             if entry.isReady {
                 sections
-                if let note = entry.day.note, !note.isEmpty {
-                    Label(note, systemImage: "note.text")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(medium ? 1 : 2)
-                        .privacySensitive()
-                }
             } else {
                 Text(WidgetSummary.isConfigured ? "暂未加载安排，点按打开周计划" : "预览版未配置小组件数据")
                     .font(.system(size: 12))
@@ -150,9 +143,9 @@ private struct WeekPlanWidgetView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .font(.system(size: 11, weight: .medium))
+        .font(.system(size: medium ? 11 : 12, weight: .medium))
         .padding(.horizontal, 7)
-        .padding(.vertical, 5)
+        .padding(.vertical, medium ? 4 : 5)
         .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 7))
         .privacySensitive()
     }
@@ -184,10 +177,10 @@ private struct WeekPlanWidgetView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .font(.system(size: 11))
+            .font(.system(size: medium ? 11 : 12))
             if list.items.isEmpty {
                 Text("暂无安排")
-                    .font(.system(size: 11))
+                    .font(.system(size: medium ? 11 : 12))
                     .foregroundStyle(.secondary)
             }
             ForEach(Array(list.items.prefix(limit).enumerated()), id: \.offset) { _, task in
@@ -198,9 +191,9 @@ private struct WeekPlanWidgetView: View {
                         .privacySensitive()
                 } icon: {
                     Image(systemName: task.isDone ? "checkmark.square.fill" : "square")
-                        .font(.system(size: 10))
+                        .font(.system(size: medium ? 10 : 11))
                 }
-                .font(.system(size: medium ? 11 : 12))
+                .font(.system(size: medium ? 11 : 13))
                 .foregroundStyle(task.isDone ? .secondary : .primary)
             }
         }

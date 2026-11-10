@@ -60,7 +60,7 @@ struct MonthCalendarView: View {
         HStack(spacing: 8) {
             Button(action: goBack) {
                 Label("周表", systemImage: "chevron.left")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(palette.accent)
                     .padding(.horizontal, 8)
                     .frame(height: 30)
@@ -74,7 +74,7 @@ struct MonthCalendarView: View {
             HStack(spacing: 2) {
                 monthArrow("chevron.left", title: "上个月", offset: -1)
                 Text(monthTitle)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(palette.ink)
                     .monospacedDigit()
                     .lineLimit(1)
@@ -102,7 +102,7 @@ struct MonthCalendarView: View {
                 today = selected
             } label: {
                 Text("今天")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(palette.accent)
                     .padding(.horizontal, 8)
                     .frame(height: 28)
@@ -134,7 +134,7 @@ struct MonthCalendarView: View {
             HStack(spacing: 1) {
                 ForEach(weekdays, id: \.self) { day in
                     Text(day)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(palette.muted)
                         .frame(maxWidth: .infinity)
                         .frame(height: 28)
@@ -154,7 +154,6 @@ struct MonthCalendarView: View {
 
     private func dayCell(_ date: Date, key: String, deadlines: Int) -> some View {
         let tasks = store.plan[.day(key)].count
-        let hasNote = !store.plan[noteFor: key].isEmpty
         let inMonth = calendar.calendar.isDate(date, equalTo: selected, toGranularity: .month)
         let isSelected = key == selectedKey
         let isToday = key == calendar.dayKey(today)
@@ -163,18 +162,13 @@ struct MonthCalendarView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
                     Text("\(calendar.calendar.component(.day, from: date))")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .monospacedDigit()
                         .foregroundStyle(isToday || isSelected ? palette.accent : inMonth ? palette.ink : palette.muted)
                     if isToday {
                         Circle().fill(palette.accent).frame(width: 5, height: 5)
                     }
                     Spacer(minLength: 0)
-                    if hasNote {
-                        Image(systemName: "note.text")
-                            .font(.system(size: 10))
-                            .foregroundStyle(palette.muted)
-                    }
                 }
                 Spacer(minLength: 0)
                 HStack(spacing: 3) {
@@ -192,7 +186,7 @@ struct MonthCalendarView: View {
             }
             .padding(6)
             .frame(maxWidth: .infinity)
-            .frame(height: 44, alignment: .topLeading)
+            .frame(height: 48, alignment: .topLeading)
             .background(isSelected ? palette.blueWash : inMonth ? palette.surface : palette.subtle)
             .overlay {
                 if isSelected {
@@ -204,23 +198,22 @@ struct MonthCalendarView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(calendar.shortDate(date)) \(calendar.weekday(date))")
-        .accessibilityValue("\(tasks) 项待办，\(deadlines) 项 DDL\(hasNote ? "，有备注" : "")")
+        .accessibilityValue("\(tasks) 项待办，\(deadlines) 项 DDL")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func details(deadlines: [PlanDeadline]) -> some View {
         let tasks = store.plan[.day(selectedKey)]
-        let note = store.plan[noteFor: selectedKey]
         let goals = store.plan[.goal(calendar.dayKey(calendar.weekStart(for: selected)))]
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(calendar.shortDate(selected))
-                    .font(.system(size: 23, weight: .semibold))
+                    .font(.system(size: 24, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(palette.ink)
                     .accessibilityAddTraits(.isHeader)
                 Text(calendar.weekday(selected))
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(palette.muted)
 
                 Spacer(minLength: 8)
@@ -241,24 +234,18 @@ struct MonthCalendarView: View {
                                     .strikethrough(item.isDone)
                                     .foregroundStyle(item.isDone ? palette.muted : palette.ink)
                                 Text(item.dueAt.formatted(.dateTime.hour().minute().locale(Locale(identifier: "zh_CN"))))
-                                    .font(.system(size: 11))
+                                    .font(.system(size: 12))
                                     .foregroundStyle(palette.muted)
                             }
                         }
                     }
                 }
                 taskSection("当天待办", icon: "checklist", tasks: tasks)
-                if !note.isEmpty {
-                    VStack(alignment: .leading, spacing: 7) {
-                        section("备注 / 标记", icon: "note.text")
-                        Text(note).foregroundStyle(palette.ink)
-                    }
-                }
                 if !goals.isEmpty {
                     taskSection("所在周目标", icon: "flag", tasks: goals)
                 }
             }
-            .font(.system(size: 12))
+            .font(.system(size: 14))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
@@ -287,7 +274,7 @@ struct MonthCalendarView: View {
 
     private func section(_ title: String, icon: String) -> some View {
         Label(title, systemImage: icon)
-            .font(.system(size: 12, weight: .semibold))
+            .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(palette.accent)
             .accessibilityAddTraits(.isHeader)
     }

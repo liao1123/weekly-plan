@@ -60,32 +60,26 @@ struct QA {
         precondition(reloaded.plan[goal][0].title == "汇总进展")
         precondition(reloaded.plan[monday][0].title == "整理本周资料")
         precondition(reloaded.plan[.goal("2026-11-16")].isEmpty)
-        let legacyBytes = try Data(contentsOf: disk.file)
-        precondition(!String(decoding: legacyBytes, as: UTF8.self).contains("\"notes\""))
-        precondition(reloaded.plan[noteFor: "2026-11-10"].isEmpty)
-
-        precondition(store.saveNote("待跟进\n周五核对", for: "2026-11-10"))
-        precondition(store.saveNote("已确认", for: key))
+        let bytesWithoutNotes = try Data(contentsOf: disk.file)
+        var legacyDocument = try JSONSerialization.jsonObject(with: bytesWithoutNotes) as! [String: Any]
+        precondition(legacyDocument["notes"] == nil)
+        let legacyNotes = ["2026-11-10": "待跟进\n周五核对", "2026-11-11": "已确认"]
+        legacyDocument["notes"] = legacyNotes
+        try JSONSerialization.data(withJSONObject: legacyDocument).write(to: disk.file, options: .atomic)
+        store.load()
         let withNotes = try disk.read()
-        precondition(withNotes[noteFor: "2026-11-10"] == "待跟进\n周五核对")
-        precondition(withNotes[noteFor: key] == "已确认")
-        precondition(withNotes[noteFor: "2026-11-11"].isEmpty)
         precondition(withNotes[day] == reloaded.plan[day] && withNotes[goal] == reloaded.plan[goal])
         precondition(withNotes.deadlineItems.isEmpty)
 
         simulateFailure = true
         precondition(!store.remove(taskID, in: day))
-        precondition(!store.saveNote("无法保存的改动", for: key))
         precondition(store.plan[day].count == 1 && store.errorMessage != nil)
         let stillSaved = try disk.read()
         precondition(stillSaved == withNotes && store.plan == withNotes)
         simulateFailure = false
-        precondition(store.saveNote(" ", for: key))
         precondition(store.remove(taskID, in: day))
         let afterDelete = try disk.read()
         precondition(afterDelete[day].isEmpty && afterDelete[goal].count == 1)
-        precondition(afterDelete[noteFor: key].isEmpty)
-        precondition(afterDelete[noteFor: "2026-11-10"] == "待跟进\n周五核对")
 
         let later = tuesday.addingTimeInterval(86_400 + 7_200 + 180 + 4)
         precondition(DeadlineCountdown(dueAt: later, now: tuesday).label == "还剩 1天 02:03:04")
@@ -102,19 +96,21 @@ struct QA {
         let savedMeeting = savedPlan.deadlineItems.first { $0.id == meeting.id }
         precondition(savedMeeting?.title == "会议纪要" && savedMeeting?.isDone == true)
         precondition(savedMeeting?.dueAt == tuesday.addingTimeInterval(60))
-        precondition(savedPlan[noteFor: "2026-11-10"] == afterDelete[noteFor: "2026-11-10"])
+        let savedBytes = try Data(contentsOf: disk.file)
+        let savedDocument = try JSONSerialization.jsonObject(with: savedBytes) as! [String: Any]
+        precondition(savedDocument["notes"] as? [String: String] == legacyNotes)
         precondition(savedPlan[goal] == afterDelete[goal])
         precondition(store.removeDeadline(meeting.id))
         precondition(store.plan.deadlineItems.count == 1)
 
         var widgetFixture = store.plan
         widgetFixture[.day(key)] = [PlanTask(title: "往日记录")]
-        widgetFixture[noteFor: key] = "往日备注"
         widgetFixture[.day("2026-11-10")] = (1...6).map {
             PlanTask(title: "事项 \($0)", isDone: $0.isMultiple(of: 2))
         }
         let snapshot = widgetFixture.widgetSummary(at: tuesday, calendar: shanghai)
         precondition(snapshot.days[key] == nil && snapshot.goals[key]?.count == 1)
+        precondition(snapshot.days["2026-11-11"] == nil)
         precondition(snapshot.days["2026-11-10"]?.tasks.items.count == 4)
         precondition(snapshot.days["2026-11-10"]?.tasks.completed == 3)
         precondition(snapshot.days["2026-11-10"]?.tasks.count == 6)
@@ -122,7 +118,9 @@ struct QA {
         let snapshotBytes = try JSONEncoder().encode(snapshot)
         let decodedSnapshot = try JSONDecoder().decode(WidgetSummary.self, from: snapshotBytes)
         precondition(decodedSnapshot == snapshot)
-        precondition(!String(decoding: snapshotBytes, as: UTF8.self).contains("往日"))
+        let snapshotText = String(decoding: snapshotBytes, as: UTF8.self)
+        precondition(!snapshotText.contains("往日"))
+        precondition(!snapshotText.contains("\"note\""))
 
         let invalid = Data("corrupt".utf8)
         try invalid.write(to: disk.file, options: .atomic)
@@ -137,11 +135,9 @@ struct QA {
         let second = PlanStore(disk: { sharedDisk })
         precondition(first.save("甲的待办", in: day, editing: nil))
         precondition(second.save("乙的待办", in: day, editing: nil))
-        precondition(first.saveNote("跟进", for: key))
         precondition(second.saveDeadline("交稿", dueAt: later, editing: nil))
         let sharedPlan = try sharedDisk.read()
         precondition(sharedPlan[day].map(\.title) == ["甲的待办", "乙的待办"])
-        precondition(sharedPlan[noteFor: key] == "跟进")
         precondition(sharedPlan.firstOpenDeadline?.title == "交稿")
         let sharedTaskID = sharedPlan[day][0].id
         first.toggle(sharedTaskID, in: day)

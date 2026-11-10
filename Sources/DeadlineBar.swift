@@ -9,7 +9,7 @@ struct DeadlineBar: View {
     var body: some View {
         HStack(spacing: 9) {
             Label("DDL", systemImage: "clock")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(palette.accent)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
@@ -22,11 +22,11 @@ struct DeadlineBar: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(deadline.title)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(palette.ink)
                             .lineLimit(1)
                         Text(deadline.dateLabel)
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundStyle(palette.muted)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -36,14 +36,14 @@ struct DeadlineBar: View {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let time = DeadlineCountdown(dueAt: deadline.dueAt, now: context.date)
                     Text(time.label)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .monospacedDigit()
                         .foregroundStyle(time.isOverdue ? palette.warning : palette.accent)
                         .fixedSize()
                 }
             } else {
                 Text(store.plan.deadlineItems.isEmpty ? "记录会议、交稿和长期待办的时间" : "暂无未完成的 DDL")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(palette.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -68,7 +68,7 @@ struct DeadlineBar: View {
                 }
                 if let message = store.errorMessage {
                     Text(message)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(palette.warning)
                 }
             }
@@ -116,10 +116,11 @@ struct DeadlineBar: View {
                             Button { open(deadline) } label: {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(deadline.title)
+                                        .font(.system(size: 14))
                                         .strikethrough(deadline.isDone)
                                         .lineLimit(2)
                                     Text(deadline.dateLabel)
-                                        .font(.system(size: 11))
+                                        .font(.system(size: 12))
                                         .foregroundStyle(palette.muted)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -151,6 +152,7 @@ private struct DeadlineForm: View {
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
             TextField("会议、交稿或长期待办", text: $draft.title)
+                .font(.system(size: 14))
                 .accessibilityLabel("事项名称")
                 .focused($titleFocused)
             DatePicker("截止时间", selection: $draft.dueAt, displayedComponents: [.date, .hourAndMinute])
