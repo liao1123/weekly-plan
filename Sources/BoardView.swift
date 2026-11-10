@@ -8,6 +8,7 @@ struct BoardView: View {
     @State private var now: Date
     @State private var selectedWeek: Date?
     @State private var dayJump: DayJump?
+    @State private var calendarDate: Date?
     @State private var draft: Draft?
     @State private var noteDraft: NoteDraft?
     @State private var dailyWidth: CGFloat = 522
@@ -16,17 +17,12 @@ struct BoardView: View {
     @AppStorage("WeekPlanNoteColumnShare") private var noteColumnShare = 0.13
 
     private let calendar = PlanCalendar()
-    private let openCalendar: (Date, @escaping (Date) -> Void) -> Void
     private let midnight = NotificationCenter.default.publisher(for: .NSCalendarDayChanged)
     private let timeZoneChange = NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)
     private let activation = NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
 
-    init(
-        store: PlanStore, now: Date = .now,
-        openCalendar: @escaping (Date, @escaping (Date) -> Void) -> Void = { _, _ in }
-    ) {
+    init(store: PlanStore, now: Date = .now) {
         self.store = store
-        self.openCalendar = openCalendar
         _now = State(initialValue: now)
     }
 
@@ -37,6 +33,30 @@ struct BoardView: View {
     private var isCurrentWeek: Bool { weekKey == calendar.dayKey(calendar.weekStart(for: now)) }
 
     var body: some View {
+        ZStack {
+            // Keep the week view mounted so returning preserves its scroll position.
+            weekBoard
+                .opacity(calendarDate == nil ? 1 : 0)
+                .disabled(calendarDate != nil)
+                .allowsHitTesting(calendarDate == nil)
+                .accessibilityHidden(calendarDate != nil)
+
+            if let calendarDate {
+                MonthCalendarView(
+                    store: store,
+                    initialDate: calendarDate,
+                    goBack: { self.calendarDate = nil },
+                    openWeek: jumpToDay
+                )
+            }
+        }
+        .background(palette.canvas)
+        .onReceive(midnight) { _ in now = .now }
+        .onReceive(timeZoneChange) { _ in now = .now }
+        .onReceive(activation) { _ in now = .now }
+    }
+
+    private var weekBoard: some View {
         VStack(spacing: 0) {
             header
             DeadlineBar(store: store, palette: palette)
@@ -90,10 +110,6 @@ struct BoardView: View {
                 }
             }
         }
-        .background(palette.canvas)
-        .onReceive(midnight) { _ in now = .now }
-        .onReceive(timeZoneChange) { _ in now = .now }
-        .onReceive(activation) { _ in now = .now }
     }
 
     private var header: some View {
@@ -120,7 +136,7 @@ struct BoardView: View {
 
             Button {
                 guard finishEditing() else { return }
-                openCalendar(dayJump?.date ?? selectedWeek ?? now, jumpToDay)
+                calendarDate = dayJump?.date ?? selectedWeek ?? now
             } label: {
                 Label("月历", systemImage: "calendar")
                     .font(.system(size: 12, weight: .medium))
@@ -511,6 +527,7 @@ struct BoardView: View {
         let target = calendar.weekStart(for: date)
         selectedWeek = target == calendar.weekStart(for: now) ? nil : target
         dayJump = DayJump(date: date)
+        calendarDate = nil
     }
 
     private func beginEditing(slot: PlanSlot, task: PlanTask?) {

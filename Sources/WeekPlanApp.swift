@@ -27,7 +27,6 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSWindowD
     )
     private var panel: NSPanel!
     private var desktopCard: NSPanel!
-    private var calendarWindow: NSWindow?
     private lazy var store = PlanStore(planDidChange: Self.publishWidgetSummary)
     private var statusItem: NSStatusItem!
     private var hideItem: NSMenuItem!
@@ -95,9 +94,7 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSWindowD
         panel.hidesOnDeactivate = false
         panel.isExcludedFromWindowsMenu = true
         panel.contentMinSize = minSize
-        panel.contentView = NSHostingView(rootView: BoardView(store: store) { [weak self] date, choose in
-            self?.showCalendar(around: date, choose: choose)
-        })
+        panel.contentView = NSHostingView(rootView: BoardView(store: store))
         panel.delegate = self
         panel.setFrameUsingName(frameName)
         panel.setFrameAutosaveName(frameName)
@@ -124,35 +121,6 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSWindowD
         desktopCard.contentView = NSHostingView(rootView: DesktopPlanCard(store: store, open: showPanel))
         desktopCard.setFrameUsingName("WeekPlanDesktopCard")
         desktopCard.setFrameAutosaveName("WeekPlanDesktopCard")
-    }
-
-    private func showCalendar(around date: Date, choose: @escaping (Date) -> Void) {
-        let window = calendarWindow ?? makeCalendarWindow()
-        window.contentView = NSHostingView(rootView: MonthCalendarView(store: store, initialDate: date) { [weak self] day in
-            self?.calendarWindow?.orderOut(nil)
-            self?.showPanel()
-            choose(day)
-        })
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
-    }
-
-    private func makeCalendarWindow() -> NSWindow {
-        let screen = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
-            ?? NSRect(x: 0, y: 0, width: 1024, height: 768)
-        let frame = NSRect(x: 0, y: 0, width: min(960, screen.width - 32),
-                           height: min(640, screen.height - 50))
-        let window = NSWindow(contentRect: frame, styleMask: [.titled, .closable, .resizable, .miniaturizable],
-                              backing: .buffered, defer: false)
-        window.title = "周计划月历"
-        window.contentMinSize = NSSize(width: 740, height: 480)
-        window.isReleasedWhenClosed = false
-        window.collectionBehavior = [.moveToActiveSpace]
-        window.center()
-        window.setFrameUsingName("WeekPlanCalendar")
-        window.setFrameAutosaveName("WeekPlanCalendar")
-        calendarWindow = window
-        return window
     }
 
     private func createEditMenu() {
