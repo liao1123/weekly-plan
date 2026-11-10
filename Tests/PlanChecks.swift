@@ -81,25 +81,46 @@ struct QA {
         let afterDelete = try disk.read()
         precondition(afterDelete[day].isEmpty && afterDelete[goal].count == 1)
 
+        let mondayTask = afterDelete[monday][0]
+        precondition(mondayTask.status == .pending && reloaded.plan[day][0].status == .completed)
+        store.cycleStatus(mondayTask.id, in: monday)
+        let completedPlan = try disk.read()
+        precondition(completedPlan[monday][0].status == .completed && completedPlan[monday][0].isDone)
+        store.cycleStatus(mondayTask.id, in: monday)
+        let markedPlan = try disk.read()
+        precondition(markedPlan[monday][0].status == .incomplete && !markedPlan[monday][0].isDone)
+        store.cycleStatus(mondayTask.id, in: monday)
+        let clearedPlan = try disk.read()
+        precondition(clearedPlan == afterDelete)
+
         let later = tuesday.addingTimeInterval(86_400 + 7_200 + 180 + 4)
         precondition(DeadlineCountdown(dueAt: later, now: tuesday).label == "还剩 1天 02:03:04")
         precondition(DeadlineCountdown(dueAt: tuesday, now: tuesday.addingTimeInterval(63)).label == "已超时 00:01:03")
-        precondition(!store.saveDeadline(" ", dueAt: later, editing: nil))
-        precondition(store.saveDeadline("长期稿件", dueAt: later, editing: nil))
-        precondition(store.saveDeadline(" 会议 ", dueAt: tuesday, editing: nil))
+        precondition(!store.saveDeadline(" ", dueAt: later, showsCountdown: true, editing: nil))
+        precondition(store.saveDeadline("长期稿件", dueAt: later, showsCountdown: false, editing: nil))
+        precondition(store.saveDeadline(" 会议 ", dueAt: tuesday, showsCountdown: true, editing: nil))
         let meeting = store.plan.firstOpenDeadline!
-        precondition(meeting.title == "会议" && meeting.dueAt == tuesday)
+        precondition(meeting.title == "会议" && meeting.dueAt == tuesday && meeting.showsCountdown)
         store.toggleDeadline(meeting.id)
         precondition(store.plan.firstOpenDeadline?.title == "长期稿件")
-        precondition(store.saveDeadline("会议纪要", dueAt: tuesday.addingTimeInterval(73), editing: meeting.id))
+        precondition(store.plan.firstOpenDeadline?.showsCountdown == false)
+        precondition(store.plan.orderedDeadlines.map(\.title) == ["长期稿件", "会议"])
+        precondition(store.saveDeadline("会议纪要", dueAt: tuesday.addingTimeInterval(73), showsCountdown: false, editing: meeting.id))
         let savedPlan = try disk.read()
         let savedMeeting = savedPlan.deadlineItems.first { $0.id == meeting.id }
         precondition(savedMeeting?.title == "会议纪要" && savedMeeting?.isDone == true)
-        precondition(savedMeeting?.dueAt == tuesday.addingTimeInterval(60))
+        precondition(savedMeeting?.dueAt == tuesday.addingTimeInterval(60) && savedMeeting?.showsCountdown == false)
         let savedBytes = try Data(contentsOf: disk.file)
         let savedDocument = try JSONSerialization.jsonObject(with: savedBytes) as! [String: Any]
         precondition(savedDocument["notes"] as? [String: String] == legacyNotes)
         precondition(savedPlan[goal] == afterDelete[goal])
+
+        var oldDocument = savedDocument
+        oldDocument["deadlines"] = (savedDocument["deadlines"] as! [[String: Any]]).map { deadline in
+            deadline.filter { $0.key != "countdownEnabled" }
+        }
+        let oldPlan = try JSONDecoder().decode(Plan.self, from: JSONSerialization.data(withJSONObject: oldDocument))
+        precondition(oldPlan.deadlineItems.count == 2 && oldPlan.deadlineItems.allSatisfy(\.showsCountdown))
         precondition(store.removeDeadline(meeting.id))
         precondition(store.plan.deadlineItems.count == 1)
 
@@ -108,6 +129,7 @@ struct QA {
         widgetFixture[.day("2026-11-10")] = (1...6).map {
             PlanTask(title: "事项 \($0)", isDone: $0.isMultiple(of: 2))
         }
+        widgetFixture[.day("2026-11-10")][0].status = .incomplete
         let snapshot = widgetFixture.widgetSummary(at: tuesday, calendar: shanghai)
         precondition(snapshot.days[key] == nil && snapshot.goals[key]?.count == 1)
         precondition(snapshot.days["2026-11-11"] == nil)
@@ -115,12 +137,18 @@ struct QA {
         precondition(snapshot.days["2026-11-10"]?.tasks.completed == 3)
         precondition(snapshot.days["2026-11-10"]?.tasks.count == 6)
         precondition(snapshot.deadline?.title == "长期稿件")
+        precondition(snapshot.deadline?.showsCountdown == false)
         let snapshotBytes = try JSONEncoder().encode(snapshot)
         let decodedSnapshot = try JSONDecoder().decode(WidgetSummary.self, from: snapshotBytes)
         precondition(decodedSnapshot == snapshot)
         let snapshotText = String(decoding: snapshotBytes, as: UTF8.self)
         precondition(!snapshotText.contains("往日"))
         precondition(!snapshotText.contains("\"note\""))
+        precondition(!snapshotText.contains("\"markedIncomplete\""))
+        let oldWidgetDeadline = try JSONDecoder().decode(
+            WidgetDeadlineSummary.self, from: Data(#"{"title":"交稿","dueAt":0}"#.utf8)
+        )
+        precondition(oldWidgetDeadline.showsCountdown)
 
         let invalid = Data("corrupt".utf8)
         try invalid.write(to: disk.file, options: .atomic)
@@ -135,7 +163,7 @@ struct QA {
         let second = PlanStore(disk: { sharedDisk })
         precondition(first.save("甲的待办", in: day, editing: nil))
         precondition(second.save("乙的待办", in: day, editing: nil))
-        precondition(second.saveDeadline("交稿", dueAt: later, editing: nil))
+        precondition(second.saveDeadline("交稿", dueAt: later, showsCountdown: true, editing: nil))
         let sharedPlan = try sharedDisk.read()
         precondition(sharedPlan[day].map(\.title) == ["甲的待办", "乙的待办"])
         precondition(sharedPlan.firstOpenDeadline?.title == "交稿")

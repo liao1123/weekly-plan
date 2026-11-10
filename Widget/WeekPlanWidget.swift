@@ -37,7 +37,7 @@ private struct WeekPlanProvider: TimelineProvider {
             days: [calendar.dayKey(now): WidgetDaySummary(
                 tasks: WidgetTaskList(items: [task], count: 1)
             )],
-            deadline: WidgetDeadlineSummary(title: "交稿", dueAt: now.addingTimeInterval(28_800))
+            deadline: WidgetDeadlineSummary(title: "交稿", dueAt: now.addingTimeInterval(28_800), countdownEnabled: true)
         )
         return entry(at: now, summary: sample)
     }
@@ -61,8 +61,9 @@ private struct WeekPlanProvider: TimelineProvider {
         var dates = [now] + (1...7).compactMap {
             calendar.calendar.date(byAdding: .day, value: $0, to: midnight)
         }
-        if let due = summary.deadline?.dueAt, due > now, due < (dates.last ?? now) {
-            dates.append(due)
+        if let deadline = summary.deadline, deadline.showsCountdown,
+           deadline.dueAt > now, deadline.dueAt < (dates.last ?? now) {
+            dates.append(deadline.dueAt)
         }
         let entries = dates.sorted().map { entry(at: $0, summary: summary) }
         completion(Timeline(entries: entries, policy: .atEnd))
@@ -133,7 +134,13 @@ private struct WeekPlanWidgetView: View {
             Text("DDL").fontWeight(.bold)
             Text(item.title).lineLimit(1)
             Spacer(minLength: 2)
-            if item.dueAt > entry.date {
+            if !item.showsCountdown {
+                Text(item.dueAt, format: .dateTime.year().month().day().hour().minute().locale(Locale(identifier: "zh_CN")))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+            } else if item.dueAt > entry.date {
                 Text(timerInterval: entry.date...item.dueAt, countsDown: true)
                     .monospacedDigit()
                     .multilineTextAlignment(.trailing)
