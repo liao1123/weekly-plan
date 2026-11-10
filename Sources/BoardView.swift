@@ -10,10 +10,13 @@ struct BoardView: View {
     @State private var dayJump: DayJump?
     @State private var draft: Draft?
     @State private var noteDraft: NoteDraft?
+    @State private var dailyWidth: CGFloat = 522
+    @GestureState private var columnDrag: ColumnDrag?
+    @AppStorage("WeekPlanDateColumnShare") private var dateColumnShare = 0.07
+    @AppStorage("WeekPlanNoteColumnShare") private var noteColumnShare = 0.13
 
     private let calendar = PlanCalendar()
     private let openCalendar: (Date, @escaping (Date) -> Void) -> Void
-    private let noteWidth: CGFloat = 124
     private let midnight = NotificationCenter.default.publisher(for: .NSCalendarDayChanged)
     private let timeZoneChange = NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)
     private let activation = NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
@@ -199,26 +202,84 @@ struct BoardView: View {
 
     private var daily: some View {
         let tasks = dates.flatMap { store.plan[.day(calendar.dayKey($0))] }
+        let savedWidths = DayColumnWidths(
+            available: dailyWidth, dateShare: dateColumnShare, noteShare: noteColumnShare
+        )
+        let widths = columnDrag.map { savedWidths.adjusting($0.column, by: $0.distance) } ?? savedWidths
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 0) {
+                Text("日期")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(palette.muted)
+                    .padding(.leading, 10)
+                    .frame(width: widths.date, alignment: .leading)
+                    .accessibilityAddTraits(.isHeader)
                 sectionTitle("每日安排", icon: "list.bullet", tasks: tasks)
-                    .padding(.leading, 2)
-                    .padding(.trailing, 10)
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
                 Label("备注 / 标记", systemImage: "note.text")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(palette.muted)
                     .padding(.leading, 10)
-                    .frame(width: noteWidth, alignment: .leading)
+                    .frame(width: widths.note, alignment: .leading)
                     .accessibilityAddTraits(.isHeader)
             }
 
             VStack(spacing: 0) {
                 ForEach(dates, id: \.self) { date in
                     if date != weekStart { rule }
-                    dayRow(date).id(calendar.dayKey(date))
+                    dayRow(date, widths: widths).id(calendar.dayKey(date))
                 }
             }
             .modifier(BoardCard(palette: palette))
+        }
+        .frame(maxWidth: .infinity)
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { dailyWidth = $0 }
+        .overlay(alignment: .leading) {
+            columnDivider(.date, savedWidths: savedWidths, widths: widths)
+                .offset(x: widths.date - ColumnResizeHandle.hitWidth / 2)
+        }
+        .overlay(alignment: .trailing) {
+            columnDivider(.note, savedWidths: savedWidths, widths: widths)
+                .offset(x: ColumnResizeHandle.hitWidth / 2 - widths.note)
+        }
+    }
+
+    private func columnDivider(
+        _ column: ResizableColumn, savedWidths: DayColumnWidths, widths: DayColumnWidths
+    ) -> some View {
+        ColumnResizeHandle(
+            palette: palette, dragging: columnDrag?.column == column
+        )
+        .gesture(
+            DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                .updating($columnDrag) { value, drag, _ in
+                    drag = ColumnDrag(column: column, distance: value.translation.width)
+                }
+                .onEnded { value in
+                    saveColumnWidth(column, from: savedWidths.adjusting(column, by: value.translation.width))
+                }
+        )
+        .help("拖动调整列宽")
+        .accessibilityLabel(column == .date ? "日期列宽" : "备注列宽")
+        .accessibilityValue("\(Int((column == .date ? widths.date : widths.note).rounded())) 点")
+        .accessibilityAdjustableAction { direction in
+            let step: CGFloat = column == .date ? 12 : -12
+            switch direction {
+            case .increment:
+                saveColumnWidth(column, from: savedWidths.adjusting(column, by: step))
+            case .decrement:
+                saveColumnWidth(column, from: savedWidths.adjusting(column, by: -step))
+            @unknown default:
+                break
+            }
+        }
+    }
+
+    private func saveColumnWidth(_ column: ResizableColumn, from widths: DayColumnWidths) {
+        switch column {
+        case .date: dateColumnShare = widths.dateShare
+        case .note: noteColumnShare = widths.noteShare
         }
     }
 
@@ -242,56 +303,50 @@ struct BoardView: View {
         }
     }
 
-    private func dayRow(_ date: Date) -> some View {
+    private func dayRow(_ date: Date, widths: DayColumnWidths) -> some View {
         let key = calendar.dayKey(date)
         let isToday = key == calendar.dayKey(now)
         return HStack(alignment: .top, spacing: 0) {
+            dayLabel(date, isToday: isToday)
+                .frame(width: widths.date, alignment: .leading)
             taskList(in: .day(key), addLabel: "为\(calendar.weekday(date))添加待办")
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
             noteCell(for: key, weekday: calendar.weekday(date))
-                .frame(width: noteWidth, alignment: .leading)
+                .frame(width: widths.note, alignment: .leading)
         }
-            .frame(minHeight: 50, alignment: .topLeading)
-            .padding(.leading, 80)
-            .background(alignment: .leading) {
-                HStack(spacing: 0) {
-                    isToday ? palette.blueWash : palette.subtle
-                    palette.line.frame(width: 1)
+        .frame(minHeight: 50, alignment: .topLeading)
+        .background(alignment: .leading) {
+            (isToday ? palette.blueWash : palette.subtle).frame(width: widths.date)
+        }
+        .background(alignment: .trailing) {
+            palette.subtle.frame(width: widths.note)
+        }
+    }
+
+    private func dayLabel(_ date: Date, isToday: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Text(calendar.weekday(date))
+                    .font(.system(size: 11, weight: .medium))
+                if isToday {
+                    Text("今天")
+                        .font(.system(size: 9, weight: .medium))
+                        .padding(.horizontal, 3)
+                        .padding(.vertical, 1)
+                        .background(palette.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 3))
                 }
-                .frame(width: 80)
             }
-            .background(alignment: .trailing) {
-                HStack(spacing: 0) {
-                    palette.line.frame(width: 1)
-                    palette.subtle
-                }
-                .frame(width: noteWidth)
-            }
-            .overlay(alignment: .topLeading) {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 4) {
-                        Text(calendar.weekday(date))
-                            .font(.system(size: 11, weight: .medium))
-                        if isToday {
-                            Text("今天")
-                                .font(.system(size: 9, weight: .medium))
-                                .padding(.horizontal, 3)
-                                .padding(.vertical, 1)
-                                .background(palette.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 3))
-                        }
-                    }
-                    .foregroundStyle(isToday ? palette.accent : palette.muted)
-                    Text(calendar.shortDate(date))
-                        .font(.system(size: 13, weight: .semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(isToday ? palette.accent : palette.ink)
-                }
-                .padding(.leading, 10)
-                .padding(.top, 8)
-                .accessibilityElement(children: .combine)
-                .accessibilityAddTraits(.isHeader)
-            }
+            .foregroundStyle(isToday ? palette.accent : palette.muted)
+            Text(calendar.shortDate(date))
+                .font(.system(size: 13, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(isToday ? palette.accent : palette.ink)
+        }
+        .padding(.leading, 10)
+        .padding(.top, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 
     private func noteCell(for day: String, weekday: String) -> some View {
@@ -494,6 +549,69 @@ private struct Draft: Identifiable {
 private struct NoteDraft {
     let day: String
     var text: String
+}
+
+private enum ResizableColumn {
+    case date, note
+}
+
+private struct ColumnDrag {
+    let column: ResizableColumn
+    let distance: CGFloat
+}
+
+private struct DayColumnWidths {
+    private static let dateMinimum: CGFloat = 68
+    private static let tasksMinimum: CGFloat = 168
+    private static let noteMinimum: CGFloat = 100
+    private let extra: CGFloat
+    private(set) var dateShare: Double
+    private(set) var noteShare: Double
+
+    init(available: CGFloat, dateShare: Double, noteShare: Double) {
+        extra = max(0, available - Self.dateMinimum - Self.tasksMinimum - Self.noteMinimum)
+        self.dateShare = min(max(0, dateShare), 1)
+        self.noteShare = min(max(0, noteShare), 1 - self.dateShare)
+    }
+
+    var date: CGFloat { Self.dateMinimum + extra * CGFloat(dateShare) }
+    var note: CGFloat { Self.noteMinimum + extra * CGFloat(noteShare) }
+
+    func adjusting(_ column: ResizableColumn, by distance: CGFloat) -> Self {
+        guard extra > 0 else { return self }
+        let shift = Double(distance / extra)
+        var result = self
+        switch column {
+        case .date: result.dateShare = min(max(0, dateShare + shift), 1 - noteShare)
+        case .note: result.noteShare = min(max(0, noteShare - shift), 1 - dateShare)
+        }
+        return result
+    }
+}
+
+private struct ColumnResizeHandle: View {
+    static let hitWidth: CGFloat = 12
+    let palette: BoardPalette
+    let dragging: Bool
+    @State private var hovering = false
+
+    var body: some View {
+        Rectangle()
+            .fill(hovering || dragging ? palette.accent : palette.line)
+            .frame(width: hovering || dragging ? 2 : 1)
+            .frame(width: Self.hitWidth)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                hovering = inside
+                if !inside {
+                    NSCursor.arrow.set()
+                } else if #available(macOS 15.0, *) {
+                    NSCursor.columnResize.set()
+                } else {
+                    NSCursor.resizeLeftRight.set()
+                }
+            }
+    }
 }
 
 private struct DraftEditor: View {

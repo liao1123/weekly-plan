@@ -107,6 +107,23 @@ struct QA {
         precondition(store.removeDeadline(meeting.id))
         precondition(store.plan.deadlineItems.count == 1)
 
+        var widgetFixture = store.plan
+        widgetFixture[.day(key)] = [PlanTask(title: "往日记录")]
+        widgetFixture[noteFor: key] = "往日备注"
+        widgetFixture[.day("2026-11-10")] = (1...6).map {
+            PlanTask(title: "事项 \($0)", isDone: $0.isMultiple(of: 2))
+        }
+        let snapshot = widgetFixture.widgetSummary(at: tuesday, calendar: shanghai)
+        precondition(snapshot.days[key] == nil && snapshot.goals[key]?.count == 1)
+        precondition(snapshot.days["2026-11-10"]?.tasks.items.count == 4)
+        precondition(snapshot.days["2026-11-10"]?.tasks.completed == 3)
+        precondition(snapshot.days["2026-11-10"]?.tasks.count == 6)
+        precondition(snapshot.deadline?.title == "长期稿件")
+        let snapshotBytes = try JSONEncoder().encode(snapshot)
+        let decodedSnapshot = try JSONDecoder().decode(WidgetSummary.self, from: snapshotBytes)
+        precondition(decodedSnapshot == snapshot)
+        precondition(!String(decoding: snapshotBytes, as: UTF8.self).contains("往日"))
+
         let invalid = Data("corrupt".utf8)
         try invalid.write(to: disk.file, options: .atomic)
         let corrupted = PlanStore(disk: { disk })
@@ -114,6 +131,24 @@ struct QA {
         precondition(!corrupted.save("不可覆盖已有文件", in: day, editing: nil))
         let bytes = try Data(contentsOf: disk.file)
         precondition(bytes == invalid)
-        print("PASS: month and week boundaries, prior plan decoding, task and note saves, and deadline countdown")
+
+        let sharedDisk = PlanDisk(file: folder.appending(path: "multi-instance.json"))
+        let first = PlanStore(disk: { sharedDisk })
+        let second = PlanStore(disk: { sharedDisk })
+        precondition(first.save("甲的待办", in: day, editing: nil))
+        precondition(second.save("乙的待办", in: day, editing: nil))
+        precondition(first.saveNote("跟进", for: key))
+        precondition(second.saveDeadline("交稿", dueAt: later, editing: nil))
+        let sharedPlan = try sharedDisk.read()
+        precondition(sharedPlan[day].map(\.title) == ["甲的待办", "乙的待办"])
+        precondition(sharedPlan[noteFor: key] == "跟进")
+        precondition(sharedPlan.firstOpenDeadline?.title == "交稿")
+        let sharedTaskID = sharedPlan[day][0].id
+        first.toggle(sharedTaskID, in: day)
+        second.toggle(sharedTaskID, in: day)
+        let afterBothToggles = try sharedDisk.read()
+        precondition(afterBothToggles[day][0].isDone)
+
+        print("PASS: calendar, legacy plans, deadlines, widget privacy, and multi-instance saves")
     }
 }

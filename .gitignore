@@ -4,3 +4,17 @@
 *.app/
 *.zip
 *.dmg
+*.log
+*.xcarchive/
+xcuserdata/
+*.xcuserstate
+.env
+.env.*
+*.p8
+*.p12
+*.key
+*.provisionprofile
+*.mobileprovision
+计划.json
+计划.json.lock
+WidgetSnapshot.json

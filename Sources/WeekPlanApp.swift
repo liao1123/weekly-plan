@@ -1,6 +1,8 @@
 import AppKit
+import OSLog
 import ServiceManagement
 import SwiftUI
+import WidgetKit
 
 @main
 @MainActor
@@ -26,7 +28,7 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSWindowD
     private var panel: NSPanel!
     private var desktopCard: NSPanel!
     private var calendarWindow: NSWindow?
-    private lazy var store = PlanStore()
+    private lazy var store = PlanStore(planDidChange: Self.publishWidgetSummary)
     private var statusItem: NSStatusItem!
     private var hideItem: NSMenuItem!
     private var pinItem: NSMenuItem!
@@ -55,6 +57,27 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSWindowD
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showPanel()
         return false
+    }
+
+    func application(
+        _ application: NSApplication, continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void
+    ) -> Bool {
+        guard userActivity.userInfo?[WidgetCenter.UserInfoKey.kind] as? String == WidgetSummary.kind else {
+            return false
+        }
+        if panel != nil { showPanel() }
+        return true
+    }
+
+    private static func publishWidgetSummary(_ plan: Plan) {
+        do {
+            try plan.widgetSummary(at: .now).write()
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetSummary.kind)
+        } catch {
+            Logger(subsystem: WidgetSummary.storageDirectory, category: "Widget")
+                .error("Could not update the local widget summary")
+        }
     }
 
     private func createPanel() {

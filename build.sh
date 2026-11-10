@@ -4,6 +4,7 @@ set -eu
 source_dir=$(cd "$(dirname "$0")" && pwd)
 destination=${1:-"$source_dir/build"}
 architecture=${2:-$(/usr/bin/uname -m)}
+signing_identity=${WEEKPLAN_SIGNING_IDENTITY:--}
 mkdir -p "$destination" "$source_dir/build/module-cache"
 destination=$(cd "$destination" && pwd)
 app="$destination/周计划.app"
@@ -16,37 +17,63 @@ fi
 staging=$(mktemp -d "$destination/.week-plan.XXXXXX")
 trap 'rm -rf "$staging"' EXIT HUP INT TERM
 bundle="$staging/周计划.app"
-mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
+widget="$bundle/Contents/PlugIns/WeekPlanWidget.appex"
+mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources" "$widget/Contents/MacOS"
 
 compile() {
-    /usr/bin/xcrun swiftc -swift-version 6 -O -target "$1-apple-macosx14.0" \
-        -module-cache-path "$source_dir/build/module-cache" \
-        "$source_dir"/Sources/*.swift -o "$2"
+    target_architecture=$1
+    shift
+    /usr/bin/xcrun swiftc -swift-version 6 -O -target "$target_architecture-apple-macosx14.0" \
+        -module-cache-path "$source_dir/build/module-cache" "$@"
 }
 
-executable="$bundle/Contents/MacOS/WeekPlan"
-case "$architecture" in
-    universal)
-        compile arm64 "$staging/WeekPlan-arm64"
-        compile x86_64 "$staging/WeekPlan-x86_64"
-        /usr/bin/lipo -create "$staging/WeekPlan-arm64" "$staging/WeekPlan-x86_64" -output "$executable"
-        ;;
-    arm64|x86_64)
-        compile "$architecture" "$executable"
-        ;;
-    *)
-        printf '不支持的架构：%s\n' "$architecture" >&2
-        exit 1
-        ;;
-esac
+build_binary() {
+    executable=$1
+    shift
+    case "$architecture" in
+        universal)
+            slice_prefix="$staging/$(basename "$executable")"
+            compile arm64 "$@" -o "$slice_prefix-arm64"
+            compile x86_64 "$@" -o "$slice_prefix-x86_64"
+            /usr/bin/lipo -create "$slice_prefix-arm64" "$slice_prefix-x86_64" -output "$executable"
+            ;;
+        arm64|x86_64)
+            compile "$architecture" "$@" -o "$executable"
+            ;;
+        *)
+            printf '不支持的架构：%s\n' "$architecture" >&2
+            exit 1
+            ;;
+    esac
+}
+
+sign_bundle() {
+    if [ "$signing_identity" = "-" ]; then
+        /usr/bin/codesign --force --sign - --timestamp=none "$@"
+    else
+        /usr/bin/codesign --force --sign "$signing_identity" --timestamp --options runtime "$@"
+    fi
+}
+
+build_binary "$bundle/Contents/MacOS/WeekPlan" \
+    "$source_dir"/Shared/*.swift "$source_dir"/Sources/*.swift
+build_binary "$widget/Contents/MacOS/WeekPlanWidget" -application-extension \
+    -Xlinker -e -Xlinker _NSExtensionMain -framework Foundation \
+    "$source_dir"/Shared/*.swift "$source_dir"/Widget/*.swift
 cp "$source_dir/Resources/Info.plist" "$bundle/Contents/Info.plist"
+cp "$source_dir/Resources/WidgetInfo.plist" "$widget/Contents/Info.plist"
+for key in CFBundleShortVersionString CFBundleVersion; do
+    value=$(/usr/bin/plutil -extract "$key" raw "$bundle/Contents/Info.plist")
+    /usr/bin/plutil -insert "$key" -string "$value" "$widget/Contents/Info.plist"
+done
 
 /usr/bin/xcrun swift -module-cache-path "$source_dir/build/module-cache" \
     "$source_dir/DrawIcon.swift" "$staging/icon.png"
 /usr/bin/sips -z 512 512 "$staging/icon.png" --out "$staging/icon-512.png" >/dev/null
 /usr/bin/sips -s format icns "$staging/icon-512.png" \
     --out "$bundle/Contents/Resources/AppIcon.icns" >/dev/null
-/usr/bin/codesign --force --sign - --timestamp=none "$bundle"
-/usr/bin/codesign --verify --strict --deep "$bundle"
+sign_bundle --entitlements "$source_dir/Resources/Widget.entitlements" "$widget"
+sign_bundle "$bundle"
+/usr/bin/codesign --verify --strict --deep --all-architectures "$bundle"
 mv "$bundle" "$app"
 printf '%s\n' "$app"
