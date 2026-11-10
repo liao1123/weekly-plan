@@ -16,7 +16,7 @@
 
 在系统识别扩展的版本上，右键桌面空白处，选择「编辑小组件」，搜索「周计划」，再拖动所需尺寸到桌面。也可以从通知中心添加。 [Apple 小组件使用说明](https://support.apple.com/en-gb/guide/mac-help/mchl52be5da5/mac)
 
-默认的本地构建使用临时签名，预览包可用于检查编辑窗口和包结构。周计划 1.4.1 已在 macOS 26.6.2 使用 Apple Development 签名验证过，可以从系统图库添加到桌面、读取本机计划，并点按小组件打开应用。对外提供下载的安装包使用 Developer ID 签名和 Apple 公证。 [Apple 签名与公证说明](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
+默认的本地构建使用临时签名，预览包可用于检查编辑窗口和包结构。1.4.2 已在 macOS 26.6.2 用 Apple Development 签名从 ZIP 重装验证，系统桌面小组件能读取本周目标和今日待办，点按可打开应用。对外提供下载的安装包使用 Developer ID 签名和 Apple 公证。 [Apple 签名与公证说明](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
 
 ## 本机构建
 
@@ -27,9 +27,9 @@ sh test.sh
 sh build.sh
 ```
 
-生成的 App 在 `build/周计划.app`。App 内嵌 `WeekPlanWidget.appex`。运行 `sh package.sh` 会在 `dist/` 生成包含两种架构的 `-native-preview.zip`。
+生成的 App 在 `build/周计划.app`。App 内嵌 `WeekPlanWidget.appex`。运行 `sh package.sh` 会在 `dist/` 生成包含两种架构的 `-native-preview.zip`。安装 App 不需要安装 Xcode、模拟器或其他运行时。
 
-测试系统原生小组件时，可使用钥匙串里已有的 Apple Development 或 Developer ID Application 身份重新构建。开发签名可在 Xcode 的「Settings → Accounts → Manage Certificates」配置。以下名称需要替换为本机签名身份。 [Apple 签名身份说明](https://developer.apple.com/documentation/Xcode/sharing-your-teams-signing-certificates)
+测试系统原生小组件时，可使用钥匙串里已有的 Apple Development 或 Developer ID Application 身份重新构建。构建脚本按签名团队配置 App Group，用于在应用与小组件之间共享摘要。开发签名可在 Xcode 的「Settings → Accounts → Manage Certificates」配置。以下名称需要替换为本机签名身份。 [Apple App Group 说明](https://developer.apple.com/documentation/xcode/accessing-app-group-containers)
 
 ```sh
 WEEKPLAN_SIGNING_IDENTITY='Apple Development: 你的签名身份' sh build.sh build/signed
@@ -47,6 +47,6 @@ sh package.sh
 
 ## 数据与隐私
 
-计划、备注和 DDL 保存在当前 Mac 的「应用程序支持」目录。系统小组件只读一份本机摘要，其中包含当前和以后日期的有限条目。应用在本机处理这些数据，小组件内容随系统隐私设置脱敏。
+计划、备注和 DDL 保存在当前 Mac 的「应用程序支持」目录。系统小组件通过 App Group 读取一份本机摘要，其中包含当前和以后日期的有限条目。应用在本机处理这些数据，小组件内容随系统隐私设置脱敏。
 
 项目源码包含 Swift 文件、资源、测试和打包脚本。发布前应核对提交文件及 ZIP 清单。个人计划、摘要文件、构建缓存、日志和签名凭据均列入忽略规则。签名证书及公证凭据保存在本机钥匙串。演示和截图使用示例数据。

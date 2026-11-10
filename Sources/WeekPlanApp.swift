@@ -71,12 +71,13 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSWindowD
     }
 
     private static func publishWidgetSummary(_ plan: Plan) {
+        guard WidgetSummary.isConfigured else { return }
         do {
             try plan.widgetSummary(at: .now).write()
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetSummary.kind)
         } catch {
             Logger(subsystem: WidgetSummary.storageDirectory, category: "Widget")
-                .error("Could not update the local widget summary")
+                .error("Could not update the local widget summary (\((error as NSError).domain, privacy: .public) \((error as NSError).code))")
         }
     }
 

@@ -25,6 +25,7 @@ private struct WeekPlanEntry: TimelineEntry {
 
 private struct WeekPlanProvider: TimelineProvider {
     private let calendar = PlanCalendar()
+    private let logger = Logger(subsystem: WidgetSummary.storageDirectory, category: "Widget")
 
     func placeholder(in context: Context) -> WeekPlanEntry {
         let now = Date.now
@@ -47,6 +48,10 @@ private struct WeekPlanProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<WeekPlanEntry>) -> Void) {
         let now = Date.now
+        guard WidgetSummary.isConfigured else {
+            completion(Timeline(entries: [entry(at: now, summary: nil)], policy: .never))
+            return
+        }
         guard let summary = readSummary() else {
             let retry = now.addingTimeInterval(30 * 60)
             completion(Timeline(entries: [entry(at: now, summary: nil)], policy: .after(retry)))
@@ -64,11 +69,14 @@ private struct WeekPlanProvider: TimelineProvider {
     }
 
     private func readSummary() -> WidgetSummary? {
+        guard WidgetSummary.isConfigured else { return nil }
         do {
-            return try WidgetSummary.readFromExtension()
+            let summary = try WidgetSummary.readFromExtension()
+            logger.info("Loaded the local widget summary")
+            return summary
         } catch {
-            Logger(subsystem: WidgetSummary.storageDirectory, category: "Widget")
-                .error("Could not read the local widget summary")
+            let failure = error as NSError
+            logger.error("Could not read the local widget summary (\(failure.domain, privacy: .public) \(failure.code))")
             return nil
         }
     }
@@ -117,7 +125,7 @@ private struct WeekPlanWidgetView: View {
                         .privacySensitive()
                 }
             } else {
-                Text("打开周计划以加载安排")
+                Text(WidgetSummary.isConfigured ? "暂未加载安排，点按打开周计划" : "预览版未配置小组件数据")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
