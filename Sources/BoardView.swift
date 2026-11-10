@@ -339,7 +339,11 @@ struct BoardView: View {
         VStack(alignment: .leading, spacing: 1) {
             ForEach(store.plan[slot]) { task in
                 if let draft, draft.slot == slot, draft.taskID == task.id {
-                    editor(draft)
+                    if draft.mode == .inline {
+                        inlineEditor(draft, task: task)
+                    } else {
+                        editor(draft)
+                    }
                 } else {
                     taskRow(task, slot: slot)
                 }
@@ -376,52 +380,128 @@ struct BoardView: View {
     }
 
     private func taskRow(_ task: PlanTask, slot: PlanSlot) -> some View {
-        HStack(alignment: .top, spacing: 3) {
-            Button {
-                store.toggle(task.id, in: slot)
-            } label: {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(task.isDone ? palette.accent : palette.checkBorder, lineWidth: 1)
-                        .frame(width: 17, height: 17)
-                    if task.isDone {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(palette.accent)
-                    }
-                }
-                .frame(width: 28, height: 30)
-                .contentShape(Rectangle())
-            }
-            .help(task.isDone ? "取消完成" : "标记完成")
-            .accessibilityLabel(task.isDone ? "取消完成：\(task.title)" : "标记完成：\(task.title)")
+        let write = { beginEditing(slot: slot, task: task, mode: .inline) }
+        let editDetails = { beginEditing(slot: slot, task: task) }
+        let clicks = TapGesture(count: 2).exclusively(before: TapGesture())
+        return HStack(alignment: .top, spacing: 3) {
+            taskStatusControl(task, slot: slot)
 
-            Button {
-                beginEditing(slot: slot, task: task)
-            } label: {
-                Text(task.title)
-                    .font(.system(size: 15))
-                    .foregroundStyle(task.isDone ? palette.muted : palette.ink)
-                    .strikethrough(task.isDone)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .multilineTextAlignment(.leading)
-                    .padding(.vertical, 5)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .help("编辑任务")
-            .contextMenu {
-                Button("删除任务", role: .destructive) {
-                    store.remove(task.id, in: slot)
+            Text(task.title)
+                .font(.system(size: 15))
+                .foregroundStyle(task.isDone ? palette.muted : palette.ink)
+                .strikethrough(task.isDone)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+                .padding(.vertical, 5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .gesture(clicks.onEnded { click in
+                    switch click {
+                    case .first: editDetails()
+                    case .second: write()
+                    }
+                })
+                .focusable(interactions: .activate)
+                .onKeyPress(keys: [.return, .space], phases: .down) { _ in
+                    write()
+                    return .handled
                 }
-            }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { write() }
+                .accessibilityAction(named: Text("详细编辑"), editDetails)
+                .help("单击续写，双击详细编辑")
         }
         .buttonStyle(.plain)
     }
 
+    @ViewBuilder
+    private func taskStatusControl(_ task: PlanTask, slot: PlanSlot) -> some View {
+        switch slot {
+        case .day:
+            let statusLabel = switch task.status {
+            case .pending: "待办"
+            case .completed: "已完成"
+            case .incomplete: "未完成"
+            }
+            Button {
+                store.cycleStatus(task.id, in: slot)
+            } label: {
+                taskMark(task.status, checkmarkColor: palette.success)
+            }
+            .help("点按切换待办状态")
+            .accessibilityLabel("切换待办状态：\(task.title)")
+            .accessibilityValue(statusLabel)
+        case .goal:
+            Button {
+                store.toggle(task.id, in: slot)
+            } label: {
+                taskMark(task.isDone ? .completed : .pending, checkmarkColor: palette.accent)
+            }
+            .help(task.isDone ? "取消完成" : "标记完成")
+            .accessibilityLabel(task.isDone ? "取消完成：\(task.title)" : "标记完成：\(task.title)")
+        }
+    }
+
+    private func taskMark(_ status: PlanTaskStatus, checkmarkColor: Color) -> some View {
+        let color = switch status {
+        case .completed: checkmarkColor
+        case .incomplete: palette.warning
+        case .pending: palette.checkBorder
+        }
+        return ZStack {
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(color, lineWidth: 1)
+                .frame(width: 17, height: 17)
+            if status != .pending {
+                Image(systemName: status == .completed ? "checkmark" : "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(color)
+            }
+        }
+        .frame(width: 28, height: 30)
+        .contentShape(Rectangle())
+    }
+
+    private func inlineEditor(_ active: Draft, task: PlanTask) -> some View {
+        HStack(alignment: .top, spacing: 3) {
+            taskStatusControl(task, slot: active.slot)
+            InlineTaskEditor(
+                text: draftText(for: active),
+                onSave: {
+                    if draft?.id == active.id, draft?.mode == .inline { _ = finishEditing() }
+                },
+                onCancel: {
+                    if draft?.id == active.id { draft = nil }
+                },
+                onDetails: {
+                    if draft?.id == active.id { draft?.mode = .details }
+                }
+            )
+            .padding(.vertical, 5)
+            .padding(.horizontal, 3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.surface)
+            .overlay {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(palette.accent.opacity(0.65), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+            .help("回车保存，双击详细编辑")
+        }
+        .buttonStyle(.plain)
+        .id(active.id)
+    }
+
+    private func draftText(for active: Draft) -> Binding<String> {
+        Binding(
+            get: { draft?.id == active.id ? draft?.text ?? active.text : active.text },
+            set: { if draft?.id == active.id { draft?.text = $0 } }
+        )
+    }
+
     private func editor(_ active: Draft) -> some View {
         DraftEditor(
-            text: Binding(get: { draft?.text ?? "" }, set: { draft?.text = $0 }),
+            text: draftText(for: active),
             palette: palette,
             placeholder: "输入任务内容",
             fieldLabel: active.taskID == nil ? "新增任务" : "编辑任务",
@@ -450,9 +530,9 @@ struct BoardView: View {
         calendarDate = nil
     }
 
-    private func beginEditing(slot: PlanSlot, task: PlanTask?) {
-        guard finishEditing() else { return }
-        draft = Draft(slot: slot, taskID: task?.id, text: task?.title ?? "")
+    private func beginEditing(slot: PlanSlot, task: PlanTask?, mode: Draft.Mode = .details) {
+        guard store.isReady, finishEditing() else { return }
+        draft = Draft(slot: slot, taskID: task?.id, text: task?.title ?? "", mode: mode)
     }
 
     @discardableResult
@@ -477,10 +557,16 @@ private struct DayJump: Identifiable {
 }
 
 private struct Draft: Identifiable {
+    enum Mode {
+        case inline
+        case details
+    }
+
     let id = UUID()
     let slot: PlanSlot
     let taskID: UUID?
     var text: String
+    var mode: Mode
 }
 
 private struct DateColumnWidth {
@@ -604,6 +690,7 @@ struct BoardPalette {
     var blueWash: Color { color(0xEAF1FF, 0x263454) }
     var accent: Color { color(0x245BDB, 0x91B2FF) }
     var checkBorder: Color { color(0x79818D, 0xA0A7B4) }
+    var success: Color { color(0x15803D, 0x86EFAC) }
     var warning: Color { color(0xAB2828, 0xFFAAAA) }
 
     private func color(_ light: UInt32, _ darkValue: UInt32) -> Color {

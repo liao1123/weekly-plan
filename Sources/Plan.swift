@@ -7,10 +7,33 @@ enum PlanSlot: Equatable {
     case day(String)
 }
 
+enum PlanTaskStatus: Equatable {
+    case pending
+    case completed
+    case incomplete
+
+    var next: Self {
+        switch self {
+        case .pending: .completed
+        case .completed: .incomplete
+        case .incomplete: .pending
+        }
+    }
+}
+
 struct PlanTask: Codable, Equatable, Identifiable {
     var id = UUID()
     var title: String
     var isDone = false
+    var markedIncomplete: Bool?
+
+    var status: PlanTaskStatus {
+        get { isDone ? .completed : markedIncomplete == true ? .incomplete : .pending }
+        set {
+            isDone = newValue == .completed
+            markedIncomplete = newValue == .incomplete ? true : nil
+        }
+    }
 }
 
 struct PlanDeadline: Codable, Equatable, Identifiable {
@@ -18,6 +41,10 @@ struct PlanDeadline: Codable, Equatable, Identifiable {
     var title: String
     var dueAt: Date
     var isDone = false
+    var countdownEnabled: Bool?
+
+    // Deadlines saved before this setting was introduced still count down.
+    var showsCountdown: Bool { countdownEnabled ?? true }
 
     var dateLabel: String {
         dueAt.formatted(.dateTime.year().month().day().hour().minute().locale(Locale(identifier: "zh_CN")))
@@ -56,6 +83,13 @@ struct Plan: Codable, Equatable {
         deadlineItems.filter { !$0.isDone }.min { $0.dueAt < $1.dueAt }
     }
 
+    var orderedDeadlines: [PlanDeadline] {
+        deadlineItems.sorted {
+            if $0.isDone != $1.isDone { return !$0.isDone }
+            return $0.dueAt < $1.dueAt
+        }
+    }
+
     subscript(slot: PlanSlot) -> [PlanTask] {
         get {
             switch slot {
@@ -79,7 +113,7 @@ struct Plan: Codable, Equatable {
             WidgetDaySummary(tasks: widgetTasks($0, limit: 4))
         }
         let deadline = firstOpenDeadline.map {
-            WidgetDeadlineSummary(title: String($0.title.prefix(100)), dueAt: $0.dueAt)
+            WidgetDeadlineSummary(title: String($0.title.prefix(100)), dueAt: $0.dueAt, countdownEnabled: $0.countdownEnabled)
         }
         return WidgetSummary(goals: upcomingGoals, days: upcomingDays, deadline: deadline)
     }
@@ -189,9 +223,17 @@ final class PlanStore: ObservableObject {
 
     func toggle(_ id: UUID, in slot: PlanSlot) {
         guard let isDone = plan[slot].first(where: { $0.id == id })?.isDone else { return }
+        updateStatus(id, in: slot) { _ in isDone ? .pending : .completed }
+    }
+
+    func cycleStatus(_ id: UUID, in slot: PlanSlot) {
+        updateStatus(id, in: slot) { $0.next }
+    }
+
+    private func updateStatus(_ id: UUID, in slot: PlanSlot, next: (PlanTaskStatus) -> PlanTaskStatus) {
         update(slot) { tasks in
             guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
-            tasks[index].isDone = !isDone
+            tasks[index].status = next(tasks[index].status)
         }
     }
 
@@ -202,7 +244,7 @@ final class PlanStore: ObservableObject {
         }
     }
 
-    func saveDeadline(_ text: String, dueAt: Date, editing id: UUID?) -> Bool {
+    func saveDeadline(_ text: String, dueAt: Date, showsCountdown: Bool, editing id: UUID?) -> Bool {
         let title = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return false }
         let minute = Calendar.current.dateInterval(of: .minute, for: dueAt)?.start ?? dueAt
@@ -211,8 +253,9 @@ final class PlanStore: ObservableObject {
                 guard let index = deadlines.firstIndex(where: { $0.id == id }) else { return }
                 deadlines[index].title = title
                 deadlines[index].dueAt = minute
+                deadlines[index].countdownEnabled = showsCountdown
             } else {
-                deadlines.append(PlanDeadline(title: title, dueAt: minute))
+                deadlines.append(PlanDeadline(title: title, dueAt: minute, countdownEnabled: showsCountdown))
             }
         }
     }
