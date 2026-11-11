@@ -17,15 +17,15 @@ struct WeekPlanApp {
 }
 
 @MainActor
-private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
+private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let frameName = "WeekPlanPanel"
     private let pinnedKey = "WeekPlanPinned"
     private let desktopCardKey = "WeekPlanShowsDesktopCard"
     private let minSize = NSSize(width: 430, height: 320)
-    private let desktopLevel = NSWindow.Level(
+    private let desktopCardLevel = NSWindow.Level(
         rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1
     )
-    private var panel: NSPanel!
+    private var mainWindow: NSWindow!
     private var desktopCard: NSPanel!
     private lazy var store = PlanStore(planDidChange: Self.publishWidgetSummary)
     private var statusItem: NSStatusItem!
@@ -46,15 +46,15 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSWindowD
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         createEditMenu()
-        createPanel()
+        createMainWindow()
         createDesktopCard()
         createStatusItem()
         applyDesktopCardVisibility()
-        showPanel()
+        showMainWindow()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        showPanel()
+        showMainWindow()
         return false
     }
 
@@ -65,7 +65,7 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSWindowD
         guard userActivity.userInfo?[WidgetCenter.UserInfoKey.kind] as? String == WidgetSummary.kind else {
             return false
         }
-        if panel != nil { showPanel() }
+        showMainWindow()
         return true
     }
 
@@ -80,24 +80,24 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSWindowD
         }
     }
 
-    private func createPanel() {
+    private func createMainWindow() {
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768)
         let size = NSSize(width: min(558, screen.width - 32), height: min(590, screen.height - 62))
         let frame = NSRect(x: screen.minX + 24, y: screen.maxY - size.height - 44,
                            width: size.width, height: size.height)
-        panel = NSPanel(contentRect: frame, styleMask: [.titled, .closable, .resizable],
-                        backing: .buffered, defer: false)
-        panel.title = "周计划"
-        panel.titleVisibility = .hidden
-        panel.titlebarSeparatorStyle = .none
-        panel.isReleasedWhenClosed = false
-        panel.hidesOnDeactivate = false
-        panel.isExcludedFromWindowsMenu = true
-        panel.contentMinSize = minSize
-        panel.contentView = NSHostingView(rootView: BoardView(store: store))
-        panel.delegate = self
-        panel.setFrameUsingName(frameName)
-        panel.setFrameAutosaveName(frameName)
+        mainWindow = NSWindow(contentRect: frame, styleMask: [.titled, .closable, .resizable],
+                              backing: .buffered, defer: false)
+        mainWindow.title = "周计划"
+        mainWindow.titleVisibility = .hidden
+        mainWindow.titlebarSeparatorStyle = .none
+        mainWindow.isReleasedWhenClosed = false
+        mainWindow.isExcludedFromWindowsMenu = true
+        mainWindow.level = pinned ? .floating : .normal
+        mainWindow.collectionBehavior = [.moveToActiveSpace, .ignoresCycle]
+        mainWindow.contentMinSize = minSize
+        mainWindow.contentView = NSHostingView(rootView: BoardView(store: store))
+        mainWindow.setFrameUsingName(frameName)
+        mainWindow.setFrameAutosaveName(frameName)
     }
 
     private func createDesktopCard() {
@@ -116,9 +116,9 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSWindowD
         desktopCard.isReleasedWhenClosed = false
         desktopCard.isExcludedFromWindowsMenu = true
         desktopCard.hidesOnDeactivate = false
-        desktopCard.level = desktopLevel
+        desktopCard.level = desktopCardLevel
         desktopCard.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
-        desktopCard.contentView = NSHostingView(rootView: DesktopPlanCard(store: store, open: showPanel))
+        desktopCard.contentView = NSHostingView(rootView: DesktopPlanCard(store: store, open: showMainWindow))
         desktopCard.setFrameUsingName("WeekPlanDesktopCard")
         desktopCard.setFrameAutosaveName("WeekPlanDesktopCard")
     }
@@ -154,8 +154,8 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSWindowD
         let menu = NSMenu()
         menu.delegate = self
         menu.autoenablesItems = false
-        menu.addItem(item("显示周计划", action: #selector(showPanel)))
-        hideItem = item("隐藏周计划", action: #selector(hidePanel))
+        menu.addItem(item("显示周计划", action: #selector(showMainWindow)))
+        hideItem = item("隐藏周计划", action: #selector(hideMainWindow))
         menu.addItem(hideItem)
         pinItem = item("保持置顶", action: #selector(togglePinned))
         menu.addItem(pinItem)
@@ -176,49 +176,34 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSWindowD
     }
 
     func menuWillOpen(_ menu: NSMenu) {
-        hideItem.isEnabled = panel.isVisible
+        hideItem.isEnabled = mainWindow.isVisible
         pinItem.state = pinned ? .on : .off
         desktopCardItem.state = desktopCardEnabled ? .on : .off
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
     }
 
-    func windowDidBecomeKey(_ notification: Notification) {
-        applyLevel()
-    }
-
-    func windowDidResignKey(_ notification: Notification) {
-        applyLevel()
-    }
-
-    private func applyLevel() {
-        panel.level = pinned ? .floating : (desktopCardEnabled || panel.isKeyWindow ? .normal : desktopLevel)
-    }
-
     private func applyDesktopCardVisibility() {
         if desktopCardEnabled {
-            panel.collectionBehavior = [.moveToActiveSpace, .ignoresCycle]
             desktopCard.orderFrontRegardless()
         } else {
-            panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
             desktopCard.orderOut(nil)
         }
-        applyLevel()
     }
 
-    @objc private func showPanel() {
-        panel.level = pinned ? .floating : .normal
+    @objc private func showMainWindow() {
+        guard let mainWindow else { return }
         NSApp.activate()
-        panel.makeKeyAndOrderFront(nil)
+        mainWindow.makeKeyAndOrderFront(nil)
     }
 
-    @objc private func hidePanel() {
-        panel.orderOut(nil)
+    @objc private func hideMainWindow() {
+        mainWindow.orderOut(nil)
     }
 
     @objc private func togglePinned() {
         pinned.toggle()
-        if pinned { showPanel() }
-        applyLevel()
+        mainWindow.level = pinned ? .floating : .normal
+        if pinned { showMainWindow() }
     }
 
     @objc private func toggleDesktopCard() {
