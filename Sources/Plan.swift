@@ -79,10 +79,6 @@ struct Plan: Codable, Equatable {
         set { deadlines = newValue.isEmpty ? nil : newValue }
     }
 
-    var firstOpenDeadline: PlanDeadline? {
-        deadlineItems.filter { !$0.isDone }.min { $0.dueAt < $1.dueAt }
-    }
-
     var orderedDeadlines: [PlanDeadline] {
         deadlineItems.sorted {
             if $0.isDone != $1.isDone { return !$0.isDone }
@@ -104,32 +100,11 @@ struct Plan: Codable, Equatable {
             }
         }
     }
-
-    func widgetSummary(at date: Date, calendar: PlanCalendar = PlanCalendar()) -> WidgetSummary {
-        let today = calendar.dayKey(date)
-        let thisWeek = calendar.dayKey(calendar.weekStart(for: date))
-        let upcomingGoals = goals.filter { $0.key >= thisWeek }.mapValues { widgetTasks($0, limit: 2) }
-        let upcomingDays = days.filter { $0.key >= today }.mapValues {
-            WidgetDaySummary(tasks: widgetTasks($0, limit: 4))
-        }
-        let deadline = firstOpenDeadline.map {
-            WidgetDeadlineSummary(title: String($0.title.prefix(100)), dueAt: $0.dueAt, countdownEnabled: $0.countdownEnabled)
-        }
-        return WidgetSummary(goals: upcomingGoals, days: upcomingDays, deadline: deadline)
-    }
-
-    private func widgetTasks(_ tasks: [PlanTask], limit: Int) -> WidgetTaskList {
-        WidgetTaskList(
-            items: tasks.prefix(limit).map { WidgetTaskSummary(title: String($0.title.prefix(120)), isDone: $0.isDone) },
-            count: tasks.count,
-            completed: tasks.filter(\.isDone).count
-        )
-    }
 }
 
 struct PlanDisk {
     let file: URL
-    private static let planPath = "\(WidgetSummary.storageDirectory)/计划.json"
+    private static let planPath = "local.woxi.weekplan/计划.json"
 
     static func local() throws -> PlanDisk {
         let directory = try FileManager.default.url(
@@ -180,28 +155,17 @@ final class PlanStore: ObservableObject {
     @Published private(set) var isReady = false
     @Published private(set) var errorMessage: String?
     private let disk: () throws -> PlanDisk
-    private let planDidChange: @MainActor (Plan) -> Void
 
-    init(
-        disk: @escaping () throws -> PlanDisk = PlanDisk.local,
-        planDidChange: @escaping @MainActor (Plan) -> Void = { _ in }
-    ) {
+    init(disk: @escaping () throws -> PlanDisk = PlanDisk.local) {
         self.disk = disk
-        self.planDidChange = planDidChange
         load()
     }
 
     func load() {
         do {
-            let disk = try disk()
-            plan = try disk.read()
+            plan = try disk().read()
             isReady = true
             errorMessage = nil
-            try? disk.withWriteLock {
-                let latest = try disk.read()
-                if plan != latest { plan = latest }
-                planDidChange(latest)
-            }
         } catch {
             isReady = false
             errorMessage = "无法读取本机计划。检查文件后可以重试。"
@@ -291,7 +255,6 @@ final class PlanStore: ObservableObject {
                 change(&updated)
                 if updated != latest { try disk.write(updated) }
                 if plan != updated { plan = updated }
-                if updated != latest { planDidChange(updated) }
             }
             errorMessage = nil
             return true

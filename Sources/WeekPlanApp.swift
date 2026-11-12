@@ -1,8 +1,6 @@
 import AppKit
-import OSLog
 import ServiceManagement
 import SwiftUI
-import WidgetKit
 
 @main
 @MainActor
@@ -20,18 +18,12 @@ struct WeekPlanApp {
 private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let frameName = "WeekPlanPanel"
     private let pinnedKey = "WeekPlanPinned"
-    private let desktopCardKey = "WeekPlanShowsDesktopCard"
     private let minSize = NSSize(width: 430, height: 320)
-    private let desktopCardLevel = NSWindow.Level(
-        rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1
-    )
     private var mainWindow: NSWindow!
-    private var desktopCard: NSPanel!
-    private lazy var store = PlanStore(planDidChange: Self.publishWidgetSummary)
+    private lazy var store = PlanStore()
     private var statusItem: NSStatusItem!
     private var hideItem: NSMenuItem!
     private var pinItem: NSMenuItem!
-    private var desktopCardItem: NSMenuItem!
     private var loginItem: NSMenuItem!
 
     private var pinned: Bool {
@@ -39,45 +31,16 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         set { UserDefaults.standard.set(newValue, forKey: pinnedKey) }
     }
 
-    private var desktopCardEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: desktopCardKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: desktopCardKey) }
-    }
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         createEditMenu()
         createMainWindow()
-        createDesktopCard()
         createStatusItem()
-        applyDesktopCardVisibility()
         showMainWindow()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showMainWindow()
         return false
-    }
-
-    func application(
-        _ application: NSApplication, continue userActivity: NSUserActivity,
-        restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void
-    ) -> Bool {
-        guard userActivity.userInfo?[WidgetCenter.UserInfoKey.kind] as? String == WidgetSummary.kind else {
-            return false
-        }
-        showMainWindow()
-        return true
-    }
-
-    private static func publishWidgetSummary(_ plan: Plan) {
-        guard WidgetSummary.isConfigured else { return }
-        do {
-            try plan.widgetSummary(at: .now).write()
-            WidgetCenter.shared.reloadTimelines(ofKind: WidgetSummary.kind)
-        } catch {
-            Logger(subsystem: WidgetSummary.storageDirectory, category: "Widget")
-                .error("Could not update the local widget summary (\((error as NSError).domain, privacy: .public) \((error as NSError).code))")
-        }
     }
 
     private func createMainWindow() {
@@ -98,29 +61,6 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         mainWindow.contentView = NSHostingView(rootView: BoardView(store: store))
         mainWindow.setFrameUsingName(frameName)
         mainWindow.setFrameAutosaveName(frameName)
-    }
-
-    private func createDesktopCard() {
-        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768)
-        let size = NSSize(width: 330, height: 272)
-        let horizontalOffset = min(386, max(20, screen.width - size.width - 42))
-        let frame = NSRect(x: screen.minX + horizontalOffset, y: screen.maxY - size.height - 24,
-                           width: size.width, height: size.height)
-        desktopCard = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
-                              backing: .buffered, defer: false)
-        desktopCard.title = "周计划桌面卡片"
-        desktopCard.isOpaque = false
-        desktopCard.backgroundColor = .clear
-        desktopCard.hasShadow = true
-        desktopCard.isMovableByWindowBackground = true
-        desktopCard.isReleasedWhenClosed = false
-        desktopCard.isExcludedFromWindowsMenu = true
-        desktopCard.hidesOnDeactivate = false
-        desktopCard.level = desktopCardLevel
-        desktopCard.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
-        desktopCard.contentView = NSHostingView(rootView: DesktopPlanCard(store: store, open: showMainWindow))
-        desktopCard.setFrameUsingName("WeekPlanDesktopCard")
-        desktopCard.setFrameAutosaveName("WeekPlanDesktopCard")
     }
 
     private func createEditMenu() {
@@ -147,10 +87,14 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSMenuDel
 
     private func createStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        guard let button = statusItem.button else { return }
         let icon = NSImage(systemSymbolName: "calendar", accessibilityDescription: "周计划")
         icon?.isTemplate = true
-        statusItem.button?.image = icon
-        statusItem.button?.toolTip = "周计划"
+        button.image = icon
+        button.toolTip = "周计划（左键打开，右键显示菜单）"
+        button.target = self
+        button.action = #selector(showMainWindow)
+
         let menu = NSMenu()
         menu.delegate = self
         menu.autoenablesItems = false
@@ -160,13 +104,11 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         pinItem = item("保持置顶", action: #selector(togglePinned))
         menu.addItem(pinItem)
         menu.addItem(.separator())
-        desktopCardItem = item("显示桌面卡片", action: #selector(toggleDesktopCard))
-        menu.addItem(desktopCardItem)
         loginItem = item("登录时打开", action: #selector(toggleLoginItem))
         menu.addItem(loginItem)
         menu.addItem(.separator())
         menu.addItem(item("退出周计划", action: #selector(quit)))
-        statusItem.menu = menu
+        button.menu = menu
     }
 
     private func item(_ title: String, action: Selector) -> NSMenuItem {
@@ -178,16 +120,7 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSMenuDel
     func menuWillOpen(_ menu: NSMenu) {
         hideItem.isEnabled = mainWindow.isVisible
         pinItem.state = pinned ? .on : .off
-        desktopCardItem.state = desktopCardEnabled ? .on : .off
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
-    }
-
-    private func applyDesktopCardVisibility() {
-        if desktopCardEnabled {
-            desktopCard.orderFrontRegardless()
-        } else {
-            desktopCard.orderOut(nil)
-        }
     }
 
     @objc private func showMainWindow() {
@@ -204,11 +137,6 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         pinned.toggle()
         mainWindow.level = pinned ? .floating : .normal
         if pinned { showMainWindow() }
-    }
-
-    @objc private func toggleDesktopCard() {
-        desktopCardEnabled.toggle()
-        applyDesktopCardVisibility()
     }
 
     @objc private func toggleLoginItem() {
