@@ -9,6 +9,8 @@ struct BoardView: View {
     @State private var selectedWeek: Date?
     @State private var dayJump: DayJump?
     @State private var calendarDate: Date?
+    @State private var section = BoardSection.week
+    @State private var hasOpenedIdeas = false
     @State private var draft: Draft?
     @State private var dailyWidth: CGFloat = 522
     @GestureState private var dateColumnDrag: CGFloat?
@@ -31,27 +33,56 @@ struct BoardView: View {
     private var isCurrentWeek: Bool { weekKey == calendar.dayKey(calendar.weekStart(for: now)) }
 
     var body: some View {
-        ZStack {
-            // Keep the week view mounted so returning preserves its scroll position.
-            weekBoard
-                .opacity(calendarDate == nil ? 1 : 0)
-                .disabled(calendarDate != nil)
-                .allowsHitTesting(calendarDate == nil)
-                .accessibilityHidden(calendarDate != nil)
+        VStack(spacing: 0) {
+            Picker("计划栏目", selection: Binding(get: { section }, set: selectSection)) {
+                ForEach(BoardSection.allCases, id: \.self) { item in
+                    Text(item.rawValue).tag(item)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 18)
+            .padding(.top, 9)
+            .padding(.bottom, 6)
 
-            if let calendarDate {
-                MonthCalendarView(
-                    store: store,
-                    initialDate: calendarDate,
-                    goBack: { self.calendarDate = nil },
-                    openWeek: jumpToDay
-                )
+            ZStack {
+                // Keep opened sections mounted to preserve position and drafts.
+                sectionContent(weekBoard, in: .week)
+                if let calendarDate {
+                    sectionContent(
+                        MonthCalendarView(store: store, initialDate: calendarDate, openWeek: jumpToDay),
+                        in: .month
+                    )
+                }
+                if hasOpenedIdeas {
+                    sectionContent(IdeaBoard(store: store, isActive: section == .ideas), in: .ideas)
+                }
             }
         }
         .background(palette.canvas)
         .onReceive(midnight) { _ in now = .now }
         .onReceive(timeZoneChange) { _ in now = .now }
         .onReceive(activation) { _ in now = .now }
+    }
+
+    private func sectionContent<Content: View>(_ content: Content, in item: BoardSection) -> some View {
+        let visible = section == item
+        return content
+            .opacity(visible ? 1 : 0)
+            .disabled(!visible)
+            .allowsHitTesting(visible)
+            .accessibilityHidden(!visible)
+    }
+
+    private func selectSection(_ item: BoardSection) {
+        guard item != section else { return }
+        if section == .week, !finishEditing() { return }
+        if item == .month, calendarDate == nil {
+            calendarDate = dayJump?.date ?? selectedWeek ?? now
+        }
+        if item == .ideas { hasOpenedIdeas = true }
+        section = item
     }
 
     private var weekBoard: some View {
@@ -112,40 +143,14 @@ struct BoardView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: "calendar")
+            Text(calendar.weekTitle(from: weekStart, to: dates[6]))
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(palette.accent)
-                .frame(width: 38, height: 38)
-                .background(palette.blueWash, in: RoundedRectangle(cornerRadius: 10))
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("周计划")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(palette.ink)
-                Text(calendar.weekTitle(from: weekStart, to: dates[6]))
-                    .font(.system(size: 13))
-                    .monospacedDigit()
-                    .foregroundStyle(palette.muted)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
+                .monospacedDigit()
+                .foregroundStyle(palette.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 6)
-
-            Button {
-                guard finishEditing() else { return }
-                calendarDate = dayJump?.date ?? selectedWeek ?? now
-            } label: {
-                Label("月历", systemImage: "calendar")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(palette.accent)
-                    .padding(.horizontal, 7)
-                    .frame(height: 32)
-                    .background(palette.blueWash, in: RoundedRectangle(cornerRadius: 7))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("打开月历")
-            .help("查看整月安排")
 
             HStack(spacing: 2) {
                 Button { moveWeek(-1) } label: {
@@ -195,7 +200,7 @@ struct BoardView: View {
         }
         .padding(.horizontal, 18)
         .padding(.top, 9)
-        .padding(.bottom, 15)
+        .padding(.bottom, 11)
     }
 
     private var goals: some View {
@@ -527,7 +532,7 @@ struct BoardView: View {
         let target = calendar.weekStart(for: date)
         selectedWeek = target == calendar.weekStart(for: now) ? nil : target
         dayJump = DayJump(date: date)
-        calendarDate = nil
+        section = .week
     }
 
     private func beginEditing(slot: PlanSlot, task: PlanTask?, mode: Draft.Mode = .details) {
@@ -554,6 +559,12 @@ struct BoardView: View {
 private struct DayJump: Identifiable {
     let id = UUID()
     let date: Date
+}
+
+private enum BoardSection: String, CaseIterable {
+    case week = "周计划"
+    case month = "月计划"
+    case ideas = "Idea"
 }
 
 private struct Draft: Identifiable {
