@@ -120,8 +120,39 @@ struct QA {
         }
         let oldPlan = try JSONDecoder().decode(Plan.self, from: JSONSerialization.data(withJSONObject: oldDocument))
         precondition(oldPlan.deadlineItems.count == 2 && oldPlan.deadlineItems.allSatisfy(\.showsCountdown))
+        precondition(oldPlan.ideaItems.isEmpty)
         precondition(store.removeDeadline(meeting.id))
         precondition(store.plan.deadlineItems.count == 1)
+
+        precondition(!store.addIdea(" \n "))
+        precondition(store.addIdea("  比较两种数据筛选方法\n检查结论的稳定性  "))
+        let originalIdea = store.plan.ideaItems[0]
+        precondition(originalIdea.title == "比较两种数据筛选方法\n检查结论的稳定性")
+        precondition(originalIdea.status == .pending && originalIdea.verificationPlan.isEmpty)
+        let otherEditor = PlanStore(disk: { disk })
+        precondition(otherEditor.addIdea("复查另一个对照组"))
+        var editedIdea = originalIdea
+        editedIdea.status = .testing
+        editedIdea.verificationPlan = "固定评估数据\n只调整筛选方法"
+        simulateFailure = true
+        precondition(!store.saveIdea(editedIdea, replacing: originalIdea))
+        precondition(store.plan.ideaItems == [originalIdea])
+        simulateFailure = false
+        precondition(store.saveIdea(editedIdea, replacing: originalIdea))
+        precondition(!otherEditor.saveIdea(originalIdea, replacing: originalIdea))
+        precondition(otherEditor.plan.ideaItems.first == editedIdea)
+        var verifiedIdea = editedIdea
+        verifiedIdea.status = .verified
+        verifiedIdea.verificationResult = "两种方法的结果接近"
+        precondition(store.saveIdea(verifiedIdea, replacing: editedIdea))
+        precondition(store.save("记录验证进展", in: day, editing: nil))
+        let ideasReloaded = try disk.read()
+        precondition(ideasReloaded.ideaItems.first == verifiedIdea)
+        precondition(ideasReloaded.ideaItems.count == 2 && ideasReloaded[goal] == savedPlan[goal])
+        precondition(store.removeIdea(verifiedIdea.id))
+        precondition(store.plan.ideaItems.map(\.title) == ["复查另一个对照组"])
+        precondition(!otherEditor.saveIdea(editedIdea, replacing: verifiedIdea))
+        precondition(otherEditor.plan.ideaItems == store.plan.ideaItems)
 
         let invalid = Data("corrupt".utf8)
         try invalid.write(to: disk.file, options: .atomic)
@@ -146,6 +177,6 @@ struct QA {
         let afterBothToggles = try sharedDisk.read()
         precondition(afterBothToggles[day][0].isDone)
 
-        print("PASS: calendar, legacy plans, deadlines, and multi-instance saves")
+        print("PASS: calendar, legacy plans, deadlines, ideas, and multi-instance saves")
     }
 }
