@@ -2,7 +2,6 @@ import SwiftUI
 
 struct MonthCalendarView: View {
     @ObservedObject var store: PlanStore
-    let goBack: () -> Void
     let openWeek: (Date) -> Void
 
     @Environment(\.colorScheme) private var scheme
@@ -13,9 +12,8 @@ struct MonthCalendarView: View {
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 1), count: 7)
     private let weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
-    init(store: PlanStore, initialDate: Date, goBack: @escaping () -> Void, openWeek: @escaping (Date) -> Void) {
+    init(store: PlanStore, initialDate: Date, openWeek: @escaping (Date) -> Void) {
         self.store = store
-        self.goBack = goBack
         self.openWeek = openWeek
         _selected = State(initialValue: initialDate)
     }
@@ -58,19 +56,6 @@ struct MonthCalendarView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Button(action: goBack) {
-                Label("周表", systemImage: "chevron.left")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(palette.accent)
-                    .padding(.horizontal, 8)
-                    .frame(height: 30)
-                    .background(palette.blueWash, in: RoundedRectangle(cornerRadius: 7))
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.cancelAction)
-            .accessibilityLabel("返回周表")
-            .help("返回周表")
-
             HStack(spacing: 2) {
                 monthArrow("chevron.left", title: "上个月", offset: -1)
                 Text(monthTitle)

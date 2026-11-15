@@ -51,6 +51,35 @@ struct PlanDeadline: Codable, Equatable, Identifiable {
     }
 }
 
+enum IdeaStatus: String, Codable, CaseIterable {
+    case pending
+    case testing
+    case verified
+
+    var label: String {
+        switch self {
+        case .pending: "待验证"
+        case .testing: "验证中"
+        case .verified: "已验证"
+        }
+    }
+}
+
+struct PlanIdea: Codable, Equatable, Identifiable {
+    let id: UUID
+    let createdAt: Date
+    var title: String
+    var status: IdeaStatus = .pending
+    var verificationPlan = ""
+    var verificationResult = ""
+
+    init(title: String) {
+        id = UUID()
+        createdAt = .now
+        self.title = title
+    }
+}
+
 struct DeadlineCountdown {
     let dueAt: Date
     let now: Date
@@ -73,6 +102,7 @@ struct Plan: Codable, Equatable {
     // Keep notes from older versions when saving the plan.
     private var notes: [String: String]?
     private var deadlines: [PlanDeadline]?
+    private var ideas: [PlanIdea]?
 
     var deadlineItems: [PlanDeadline] {
         get { deadlines ?? [] }
@@ -84,6 +114,11 @@ struct Plan: Codable, Equatable {
             if $0.isDone != $1.isDone { return !$0.isDone }
             return $0.dueAt < $1.dueAt
         }
+    }
+
+    var ideaItems: [PlanIdea] {
+        get { ideas ?? [] }
+        set { ideas = newValue.isEmpty ? nil : newValue }
     }
 
     subscript(slot: PlanSlot) -> [PlanTask] {
@@ -234,6 +269,37 @@ final class PlanStore: ObservableObject {
 
     func removeDeadline(_ id: UUID) -> Bool {
         updateDeadlines { $0.removeAll { $0.id == id } }
+    }
+
+    func addIdea(_ text: String) -> Bool {
+        let title = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return false }
+        let idea = PlanIdea(title: title)
+        return save { $0.ideaItems.append(idea) }
+    }
+
+    func saveIdea(_ idea: PlanIdea, replacing original: PlanIdea) -> Bool {
+        var updated = idea
+        updated.title = idea.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !updated.title.isEmpty, updated.id == original.id else { return false }
+
+        var changedElsewhere = false
+        let saved = save { plan in
+            guard let index = plan.ideaItems.firstIndex(where: { $0.id == idea.id }),
+                  plan.ideaItems[index] == original else {
+                changedElsewhere = true
+                return
+            }
+            plan.ideaItems[index] = updated
+        }
+        if changedElsewhere {
+            errorMessage = "这条 Idea 已更新或删除。请取消编辑后重新打开。"
+        }
+        return saved && !changedElsewhere
+    }
+
+    func removeIdea(_ id: UUID) -> Bool {
+        save { $0.ideaItems.removeAll { $0.id == id } }
     }
 
     private func updateDeadlines(_ change: (inout [PlanDeadline]) -> Void) -> Bool {

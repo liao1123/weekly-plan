@@ -17,9 +17,11 @@ struct WeekPlanApp {
 @MainActor
 private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let frameName = "WeekPlanPanel"
+    private let ideaFrameName = "WeekPlanIdeaWindow"
     private let pinnedKey = "WeekPlanPinned"
     private let minSize = NSSize(width: 430, height: 320)
     private var mainWindow: NSWindow!
+    private var ideaWindow: NSWindow?
     private lazy var store = PlanStore()
     private var statusItem: NSStatusItem!
     private var hideItem: NSMenuItem!
@@ -63,6 +65,25 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         mainWindow.setFrameAutosaveName(frameName)
     }
 
+    private func createIdeaWindow() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 470, height: 480),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Idea"
+        window.isReleasedWhenClosed = false
+        window.level = mainWindow.level
+        window.collectionBehavior = [.moveToActiveSpace]
+        window.contentMinSize = NSSize(width: 360, height: 310)
+        window.contentView = NSHostingView(rootView: IdeaBoard(store: store))
+        window.center()
+        window.setFrameUsingName(ideaFrameName)
+        window.setFrameAutosaveName(ideaFrameName)
+        return window
+    }
+
     private func createEditMenu() {
         let mainMenu = NSMenu()
         let appMenu = NSMenu()
@@ -101,6 +122,7 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         menu.addItem(item("显示周计划", action: #selector(showMainWindow)))
         hideItem = item("隐藏周计划", action: #selector(hideMainWindow))
         menu.addItem(hideItem)
+        menu.addItem(item("打开 Idea", action: #selector(showIdeas)))
         pinItem = item("保持置顶", action: #selector(togglePinned))
         menu.addItem(pinItem)
         menu.addItem(.separator())
@@ -133,9 +155,17 @@ private final class WeekPlanDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         mainWindow.orderOut(nil)
     }
 
+    @objc private func showIdeas() {
+        let window = ideaWindow ?? createIdeaWindow()
+        ideaWindow = window
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
+    }
+
     @objc private func togglePinned() {
         pinned.toggle()
         mainWindow.level = pinned ? .floating : .normal
+        ideaWindow?.level = mainWindow.level
         if pinned { showMainWindow() }
     }
 
