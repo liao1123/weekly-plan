@@ -96,7 +96,14 @@ struct QA {
         let later = tuesday.addingTimeInterval(86_400 + 7_200 + 180 + 4)
         precondition(DeadlineCountdown(dueAt: later, now: tuesday).label == "还剩 1天 02:03:04")
         precondition(DeadlineCountdown(dueAt: tuesday, now: tuesday.addingTimeInterval(63)).label == "已超时 00:01:03")
+        let conferenceLink = URL(string: "https://example.com/dates?track=main")!
+        precondition(PlanDeadline.webLink("  https://example.com/dates?track=main  ") == conferenceLink)
+        precondition(PlanDeadline.webLink("example.com/dates") == nil)
+        precondition(PlanDeadline.webLink("file:///tmp/dates") == nil)
         precondition(!store.saveDeadline(" ", dueAt: later, showsCountdown: true, editing: nil))
+        precondition(!store.saveDeadline(
+            "无效网址", dueAt: later, showsCountdown: true, link: URL(fileURLWithPath: "/tmp/dates"), editing: nil
+        ))
         precondition(store.saveDeadline("长期稿件", dueAt: later, showsCountdown: false, editing: nil))
         precondition(store.saveDeadline(" 会议 ", dueAt: tuesday, showsCountdown: true, editing: nil))
         let meeting = store.plan.orderedDeadlines[0]
@@ -104,11 +111,15 @@ struct QA {
         store.toggleDeadline(meeting.id)
         precondition(store.plan.orderedDeadlines.first?.showsCountdown == false)
         precondition(store.plan.orderedDeadlines.map(\.title) == ["长期稿件", "会议"])
-        precondition(store.saveDeadline("会议纪要", dueAt: tuesday.addingTimeInterval(73), showsCountdown: false, editing: meeting.id))
+        precondition(store.saveDeadline(
+            "会议纪要", dueAt: tuesday.addingTimeInterval(73), showsCountdown: false,
+            link: conferenceLink, editing: meeting.id
+        ))
         let savedPlan = try disk.read()
         let savedMeeting = savedPlan.deadlineItems.first { $0.id == meeting.id }
         precondition(savedMeeting?.title == "会议纪要" && savedMeeting?.isDone == true)
         precondition(savedMeeting?.dueAt == tuesday.addingTimeInterval(60) && savedMeeting?.showsCountdown == false)
+        precondition(savedMeeting?.link == conferenceLink)
         let savedBytes = try Data(contentsOf: disk.file)
         let savedDocument = try JSONSerialization.jsonObject(with: savedBytes) as! [String: Any]
         precondition(savedDocument["notes"] as? [String: String] == legacyNotes)
@@ -116,11 +127,17 @@ struct QA {
 
         var oldDocument = savedDocument
         oldDocument["deadlines"] = (savedDocument["deadlines"] as! [[String: Any]]).map { deadline in
-            deadline.filter { $0.key != "countdownEnabled" }
+            deadline.filter { $0.key != "countdownEnabled" && $0.key != "link" }
         }
         let oldPlan = try JSONDecoder().decode(Plan.self, from: JSONSerialization.data(withJSONObject: oldDocument))
         precondition(oldPlan.deadlineItems.count == 2 && oldPlan.deadlineItems.allSatisfy(\.showsCountdown))
+        precondition(oldPlan.deadlineItems.allSatisfy { $0.link == nil })
         precondition(oldPlan.ideaItems.isEmpty)
+        precondition(store.saveDeadline(
+            "会议纪要", dueAt: tuesday.addingTimeInterval(60), showsCountdown: false, link: nil, editing: meeting.id
+        ))
+        let withoutLink = try disk.read()
+        precondition(withoutLink.deadlineItems.first { $0.id == meeting.id }?.link == nil)
         precondition(store.removeDeadline(meeting.id))
         precondition(store.plan.deadlineItems.count == 1)
 

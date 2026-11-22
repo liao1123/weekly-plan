@@ -42,12 +42,22 @@ struct PlanDeadline: Codable, Equatable, Identifiable {
     var dueAt: Date
     var isDone = false
     var countdownEnabled: Bool?
+    var link: URL?
 
     // Deadlines saved before this setting was introduced still count down.
     var showsCountdown: Bool { countdownEnabled ?? true }
 
     var dateLabel: String {
         dueAt.formatted(.dateTime.year().month().day().hour().minute().locale(Locale(identifier: "zh_CN")))
+    }
+
+    static func webLink(_ text: String) -> URL? {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parts = URLComponents(string: value),
+              let scheme = parts.scheme?.lowercased(),
+              scheme == "https" || scheme == "http",
+              let host = parts.host, !host.isEmpty else { return nil }
+        return parts.url
     }
 }
 
@@ -85,14 +95,15 @@ struct DeadlineCountdown {
     let now: Date
 
     var isOverdue: Bool { now >= dueAt }
+    var statusLabel: String { isOverdue ? "已超时" : "还剩" }
+    var label: String { "\(statusLabel) \(durationLabel)" }
 
-    var label: String {
+    var durationLabel: String {
         let remaining = dueAt.timeIntervalSince(now)
         let seconds = Int(isOverdue ? floor(-remaining) : ceil(remaining))
         let days = seconds / 86_400
         let clock = String(format: "%02d:%02d:%02d", seconds / 3_600 % 24, seconds / 60 % 60, seconds % 60)
-        let duration = days > 0 ? "\(days)天 \(clock)" : clock
-        return isOverdue ? "已超时 \(duration)" : "还剩 \(duration)"
+        return days > 0 ? "\(days)天 \(clock)" : clock
     }
 }
 
@@ -243,9 +254,12 @@ final class PlanStore: ObservableObject {
         }
     }
 
-    func saveDeadline(_ text: String, dueAt: Date, showsCountdown: Bool, editing id: UUID?) -> Bool {
+    func saveDeadline(
+        _ text: String, dueAt: Date, showsCountdown: Bool, link: URL? = nil, editing id: UUID?
+    ) -> Bool {
         let title = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return false }
+        if let link, PlanDeadline.webLink(link.absoluteString) == nil { return false }
         let minute = Calendar.current.dateInterval(of: .minute, for: dueAt)?.start ?? dueAt
         return updateDeadlines { deadlines in
             if let id {
@@ -253,8 +267,11 @@ final class PlanStore: ObservableObject {
                 deadlines[index].title = title
                 deadlines[index].dueAt = minute
                 deadlines[index].countdownEnabled = showsCountdown
+                deadlines[index].link = link
             } else {
-                deadlines.append(PlanDeadline(title: title, dueAt: minute, countdownEnabled: showsCountdown))
+                deadlines.append(PlanDeadline(
+                    title: title, dueAt: minute, countdownEnabled: showsCountdown, link: link
+                ))
             }
         }
     }
