@@ -41,10 +41,15 @@ struct BoardView: View {
             }
             .labelsHidden()
             .pickerStyle(.segmented)
+            .controlSize(.large)
+            .tint(palette.accent)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 18)
-            .padding(.top, 9)
-            .padding(.bottom, 6)
+            .padding(.vertical, 9)
+            .background(palette.surface)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(palette.line).frame(height: 1).allowsHitTesting(false)
+            }
 
             ZStack {
                 // Keep opened sections mounted to preserve position and drafts.
@@ -54,6 +59,9 @@ struct BoardView: View {
                         MonthCalendarView(store: store, initialDate: calendarDate, openWeek: jumpToDay),
                         in: .month
                     )
+                }
+                if section == .deadlines {
+                    DeadlineBoard(store: store, palette: palette)
                 }
                 if hasOpenedIdeas {
                     sectionContent(IdeaBoard(store: store, isActive: section == .ideas), in: .ideas)
@@ -88,10 +96,6 @@ struct BoardView: View {
     private var weekBoard: some View {
         VStack(spacing: 0) {
             header
-            DeadlineBar(store: store, palette: palette)
-                .disabled(!store.isReady)
-                .padding(.horizontal, 18)
-                .padding(.bottom, 14)
             if let message = store.errorMessage {
                 HStack {
                     Label(message, systemImage: "exclamationmark.circle")
@@ -564,6 +568,7 @@ private struct DayJump: Identifiable {
 private enum BoardSection: String, CaseIterable {
     case week = "周计划"
     case month = "月计划"
+    case deadlines = "DDL"
     case ideas = "Idea"
 }
 
